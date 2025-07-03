@@ -1,10 +1,4 @@
 {
-    "COMMENT -> Possible daq types": "GBE, PFP_KX7",
-    "daqType": "GBE",
-    "COMMENT -> to do": "",
-    "daqCardList": 3,
-    "daqCardPortBits": 512,
-    "socket-name": 96,
     "COMMENT -> Numbers of captures for each block": "from 1 to 65535",
     "BUG WARNING": "Select a number of captures in each block < of the events rate",
     "block_Ncaptures": 2048,

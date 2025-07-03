@@ -28,6 +28,7 @@
 #include <thread>
 #include <unistd.h>
 #include <zmq.h>
+#include <thread>
 
 #include <jansson.h>
 
@@ -227,15 +228,32 @@ void actions::generic::destroy_digitizer(status &global_status)
 }
 
 
-bool create_digitizer(status &global_status) {
+bool actions::generic::create_digitizer(status &global_status) {
 
-    // Kill existing daqd processes ?
-    std::system("pkill daqd");
-    std::remove(global_status.clientSocketName);
-    std::remove("/dev/shm/daqd_shm");
+    unsigned int verbosity = global_status.verbosity;
+
+    /// Remove socket file if it exists
+    struct stat buffer;
+    if (stat(global_status.clientSocketName, &buffer) == 0) {
+        std::cout << "Found existing " << global_status.clientSocketName << ". Removing." << std::endl;
+        if (unlink(global_status.clientSocketName) != 0) {
+            std::cerr << "Failed to remove " << global_status.clientSocketName << ": "
+                      << strerror(errno) << std::endl;
+        }
+    }
+
+    // Remove shared memory if it exists
+    if (stat(global_status.shmName, &buffer) == 0) {
+        std::cout << "Found existing " << global_status.shmName << ". Removing." << std::endl;
+        if (unlink(global_status.shmName) != 0) {
+            std::cerr << "Failed to remove " << global_status.shmName << ": "
+                      << strerror(errno) << std::endl;
+        }
+    }
+    // std::system("pkill daqd");    
 
     // Start daqd
-    if (global_status.verbosity > 0)
+    if (verbosity > 0)
     {
         char time_buffer[BUFFER_SIZE];
         time_string(time_buffer, BUFFER_SIZE, NULL);
@@ -243,7 +261,7 @@ bool create_digitizer(status &global_status) {
         std::cout << "Opening petsys device; ";
         std::cout << std::endl;
     }
-    global_status.clientSocket = PETSYS::createListeningSocket(global_status.clientSocketName);
+    global_status.clientSocket = createListeningSocket(global_status.clientSocketName);
 
     if(global_status.clientSocket < 0)
     {
@@ -262,36 +280,15 @@ bool create_digitizer(status &global_status) {
 	}
 
 
-    if (global_status.verbosity > 0)
+    if (verbosity > 0)
     {
         char time_buffer[BUFFER_SIZE];
         time_string(time_buffer, BUFFER_SIZE, NULL);
         std::cout << '[' << time_buffer << "] ";
-        std::cout << "Connected to PETsys daqd successfully.";
+        std::cout << "Connected to PETsys daqd successfully to socket" << global_status.clientSocketName << ".";
         std::cout << std::endl;
     }
 
-    return true;
-}
-
-
-bool actions::generic::configure_digitizer(status &global_status)
-{
-    unsigned int verbosity = global_status.verbosity;
-
-    // TO DO
-
-    json_t *config = global_status.config;
-		
-    // TO DO
-     
-    return true;
-}
-
-bool actions::generic::allocate_memory(status &global_status)
-{
-    unsigned int verbosity = global_status.verbosity;
-   
     if (verbosity > 0)
     {
         char time_buffer[BUFFER_SIZE];
@@ -349,13 +346,35 @@ bool actions::generic::allocate_memory(status &global_status)
         char time_buffer[BUFFER_SIZE];
         time_string(time_buffer, BUFFER_SIZE, NULL);
         std::cout << '[' << time_buffer << "] ";
-        std::cout << "ERROR: freeing shared memory";
+        std::cout << "ERROR: allocating frame server";
         std::cout << std::endl;
 		if(global_status.frameServer != NULL) delete global_status.frameServer;
         return false;
 	}
 
-    PETSYS::pollSocket(global_status.clientSocket, global_status.frameServer);
+    std::thread socketThread(pollSocket, global_status.clientSocket, global_status.frameServer);
+    socketThread.detach();  // Run in background, detached
+    // pollSocket(global_status.clientSocket, global_status.frameServer);
+
+    return true;
+}
+
+
+bool actions::generic::configure_digitizer(status &global_status)
+{
+    unsigned int verbosity = global_status.verbosity;
+
+    json_t *config = global_status.config;
+    json_t *value;
+
+    // TO DO
+     
+    return true;
+}
+
+bool actions::generic::allocate_memory(status &global_status)
+{
+    unsigned int verbosity = global_status.verbosity;
       
     return true;
 
@@ -782,7 +801,8 @@ state actions::allocate_memory(status &global_status)
     }
     else
     {
-        return states::DIGITIZER_ERROR;
+        // return states::DIGITIZER_ERROR;
+        return states::DESTROY_DIGITIZER;
     }
 }
 
@@ -1012,7 +1032,7 @@ state actions::clear_memory(status &global_status)
         
     if(true)
     {
-				actions::generic::clear_memory(global_status);
+        actions::generic::clear_memory(global_status);
     }
     else
     {

@@ -45,3 +45,4 @@ bin/filter_timestamps
 bin/events_counter
 absp/include/swigluarun.h
 absp/src/Digitizers_wrap.cpp
+abtp2/tofpet2

@@ -27,10 +27,27 @@
 #include <vector>
 #include <map>
 
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/types.h>
+#include <sys/epoll.h>
+#include <signal.h>
+#include <errno.h>
+#include <limits.h>
+#include <sys/stat.h>
+#include <getopt.h>
+#include <boost/lexical_cast.hpp>
+
 #include <jansson.h>
 #include <zmq.h>
 
-#include "daqd.cpp"
+#include "UDPFrameServer.hpp"
+#include "FrameServer.hpp"
+#include "Protocol.hpp"
+#include "Client.hpp"
+#include "daqd.hpp"
+
+#include "PFP_KX7.hpp"
 
 #include "defaults.h"
 #include "events.hpp"
@@ -50,23 +67,22 @@ struct status
     // Petsys default
     const char *clientSocketName = "/tmp/d.sock";
 	const char *shmName = "/daqd_shm";
+    std::vector<PETSYS::AbstractDAQCard *> daqCards;
+    int daqType = -1;
+    int daqCardPortBits = -1;
+    std::vector<std::string> daqCardList;
 
     int retval = -1;
 	int clientSocket = -1;
 	int shmfd = 1;
     PETSYS::RawDataFrame *shmPtr = NULL;
 	PETSYS::FrameServer *frameServer = NULL;
-	std::vector<PETSYS::AbstractDAQCard *> daqCards;
 
     unsigned int verbosity = 0;
     unsigned long int status_msg_ID = 0;
     unsigned long int data_msg_ID = 0;
 
     json_t *config = nullptr;
-
-    int daqType = -1;
-	std::vector<std::string> daqCardList;
-	int daqCardPortBits = -1;
 
     uint16_t TotNchannel = 2; // DUAL SCOPE, change if more channels are available BUT check also configure digitizer please
     int16_t ps5000_handle;

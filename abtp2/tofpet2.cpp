@@ -74,10 +74,10 @@ void signal_handler(int signum)
     }
 }
 
-void print_usage(const std::string &name = std::string("abps5000a")) {
+void print_usage(const std::string &name = std::string("tofpet2")) {
     std::cout << "Usage: " << name << " [options]" << std::endl;
     std::cout << std::endl;
-    std::cout << "Data acquisition software that reads data from PicoScope digitizers." << std::endl;
+    std::cout << "Data acquisition software that reads data from PETsys TOFPET2 ASICs." << std::endl;
     std::cout << std::endl;
     std::cout << "Optional arguments:" << std::endl;
     std::cout << "\t-h: Display this message" << std::endl;
@@ -89,12 +89,12 @@ void print_usage(const std::string &name = std::string("abps5000a")) {
     std::cout << defaults_abcd_commands_address << std::endl;
     std::cout << "\t-f <file_name>: Digitizer configuration file, default: ";
     std::cout << defaults_abcd_config_file << std::endl;
-    std::cout << "\t-T <period>: Set base period in milliseconds, default: ";
-    std::cout << defaults_abcd_base_period << std::endl;
-    std::cout << "\t-l <device_number>: Device number, default: ";
-    std::cout << defaults_abad2_device_number << std::endl;
-    std::cout << "\t-n <serial_number>: Serial number, default: ";
-    std::cout << defaults_abcd_CONET_node << std::endl;
+    std::cout << "\t-sock <socket_name>: socket-name, default: ";
+    std::cout << "/tmp/d.sock" << std::endl;
+    std::cout << "\t-d <daq_type>: DAQ type, default: ";
+    std::cout << "GBE" << std::endl;
+    std::cout << "\t-c <card>: Card, default: ";
+    std::cout << "/dev/psdaq0" << std::endl;
     std::cout << "\t-B <size>: Events buffer maximum size, default: ";
     std::cout << defaults_abcd_events_buffer_max_size << std::endl;
     std::cout << "\t-v: Set verbose execution" << std::endl;
@@ -126,8 +126,13 @@ int main(int argc, char *argv[])
     int device_number = defaults_abad2_device_number;
     unsigned int events_buffer_max_size = defaults_abcd_events_buffer_max_size;
 
+    const char *socket_name = "/tmp/d.sock";
+    const char *daq_type = "GBE";
+    std::vector<std::string> daqCardList;
+	int daqCardPortBits = -1;
+
     int c = 0;
-    while ((c = getopt(argc, argv, "hS:D:C:f:T:l:n:B:v")) != -1) {
+    while ((c = getopt(argc, argv, "hS:D:C:f:s:d:c:B:v")) != -1) {
         switch (c) {
             case 'h':
                 print_usage(argv[0]);
@@ -144,22 +149,17 @@ int main(int argc, char *argv[])
             case 'f':
                 config_file = optarg;
                 break;
-            case 'T':
-                try
-                {
-                    base_period = std::stoul(optarg);
-                } catch (std::logic_error& e) {
-                }
+            case 's':
+                socket_name = (char *)optarg;
                 break;
             case 'v':
                 verbosity = 1;
                 break;
-            case 'l':
-                device_number = std::stoi(optarg);
+            case 'd':
+                daq_type = (char *)optarg;
                 break;
-            case 'n':
-                // FIXME
-                //CONET_node = std::stoul(optarg);
+            case 'c':
+                daqCardList.push_back((char *)optarg);
                 break;
             case 'B':
                 events_buffer_max_size = std::stoul(optarg);
@@ -173,12 +173,44 @@ int main(int argc, char *argv[])
     status global_status;
 
     global_status.verbosity = verbosity;
-    global_status.device_number = device_number;
+    // global_status.device_number = device_number;
     global_status.events_buffer_max_size = events_buffer_max_size;
     global_status.config_file = config_file;
     global_status.status_address = status_address;
     global_status.data_address = data_address;
     global_status.commands_address = commands_address;
+    global_status.clientSocketName = socket_name;
+
+    if(strcmp((char *)daq_type, "GBE") == 0) {
+        global_status.daqType = 0;
+    }
+    else if (strcmp((char *)daq_type, "PFP_KX7") == 0) {
+        global_status.daqType = 1;
+    }
+    else {
+        fprintf(stderr, "ERROR: '%s' is not a valid DAQ type\n", (char *)daq_type);
+        fprintf(stderr, "Valid DAQ types are 'GBE' or 'PFP_KX7'\n");
+        return 0;
+    }
+
+    if(daqCardList.size() > 2) {
+		fprintf(stderr, "Maximum number of DAQ cards (2) exceeded.\n");
+		return 0;
+	}
+
+	// Set default if user did not specify DAQ card
+	if(daqCardList.size() == 0) {
+		daqCardList.push_back("/dev/psdaq0");
+	}
+    global_status.daqCardList = daqCardList;
+
+	if(daqCardPortBits == -1) {
+		if(daqCardList.size() == 1)
+			daqCardPortBits = 5;
+		else
+			daqCardPortBits = 2;
+	}
+    global_status.daqCardPortBits = daqCardPortBits;
 
     if (global_status.verbosity > 0) {
         std::cout << "Device number: " << device_number << std::endl;
@@ -187,14 +219,16 @@ int main(int argc, char *argv[])
         std::cout << "Commands socket address: " << commands_address << std::endl;
         std::cout << "Digitizer configuration file: " << config_file << std::endl;
         std::cout << "Verbosity: " << verbosity << std::endl;
-        std::cout << "Base period: " << base_period << std::endl;
-        std::cout << "Events buffer size: " << events_buffer_max_size << std::endl;
+        std::cout << "Client socket name: " << socket_name << std::endl;
+        std::cout << "DAQ type: " << (char *)daq_type << std::endl;
+        std::cout << "DAQ Card Port Bits: " << daqCardPortBits << std::endl;
     }
 
     state current_state = states::START;
 
     // Flag for interrupting execution
     bool stop_execution = false;
+    globalUserStop.store(false);
 
     while (!stop_execution)
     {
@@ -213,6 +247,8 @@ int main(int argc, char *argv[])
             current_state = states::CLEAR_MEMORY;
             // If we do not clear the flag, we would enter in an infinite loop
             terminate_flag = false;
+            globalUserStop.store(true);
+            std::this_thread::sleep_for(std::chrono::milliseconds(base_period));
         }
 
         if (current_state == states::STOP)
