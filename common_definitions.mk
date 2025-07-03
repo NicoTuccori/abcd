@@ -3,7 +3,8 @@
 ################################################################################
 
 # This can be set to "clang" or "gcc"
-ABCD_COMPILER = gcc
+ABCD_COMPILER = clang
+# ABCD_COMPILER = gcc
 
 COMMON_INCLUDE_DIR = ../include
 COMMON_SRC_DIR = ../src
@@ -24,14 +25,28 @@ else
 	CXXFLAGS += -std=c++17
 endif
 
-CXXFLAGS += -O3 -W -Wall -pedantic -I$(COMMON_INCLUDE_DIR) -I$(INCLUDE_DIR) -I/usr/include/ -I/usr/include/jsoncpp/ -I /opt/local/include/ -I /usr/local/include/ -I /usr/local/include/jsoncpp/
-CFLAGS += -std=c99 -O3 -W -Wall -pedantic -I$(COMMON_INCLUDE_DIR) -I$(INCLUDE_DIR) -I/usr/include/ -I /opt/local/include/ -I /usr/local/include/
-LIBS += -lzmq -ljsoncpp
-LDFLAGS += -L/usr/lib/ -L/usr/lib64/ -L/usr/lib/x86_64-linux-gnu/ -L/opt/local/lib/ -L/usr/local/lib/ $(LIBS)
+# CXXFLAGS += -O3 -W -Wall -pedantic -I$(COMMON_INCLUDE_DIR) -I$(INCLUDE_DIR) -I/usr/include/ -I/usr/include/jsoncpp/ -I /opt/local/include/ -I /usr/local/include/ -I /usr/local/include/jsoncpp/
+CXXFLAGS += -O3 -W -Wall -pedantic \
+	-I$(COMMON_INCLUDE_DIR) -I$(INCLUDE_DIR) \
+	-I/opt/local/include \
+	-I/usr/local/include
+
+#CFLAGS += -std=c99 -O3 -W -Wall -pedantic -I$(COMMON_INCLUDE_DIR) -I$(INCLUDE_DIR) -I/usr/include/ -I /opt/local/include/ -I /usr/local/include/
+CFLAGS += -std=c99 -O3 -W -Wall -pedantic \
+	-I$(COMMON_INCLUDE_DIR) -I$(INCLUDE_DIR) \
+	-I/opt/local/include \
+	-I/usr/local/include
+
+# LIBS += -lzmq -ljsoncpp
+LIBS += -L/opt/local/lib /opt/local/lib/libzmq.dylib -ljsoncpp
+
+#LDFLAGS += -L/usr/lib/ -L/usr/lib64/ -L/usr/lib/x86_64-linux-gnu/ -L/opt/local/lib/ -L/usr/local/lib/ $(LIBS)
+LDFLAGS += -Wl,-rpath,/opt/local/lib -L/usr/local/lib 
+LDFLAGS += $(LIBS)
 
 # In case we need CAEN libraries...
-CAEN_CFLAGS =
-CAEN_LDFLAGS = -lCAENComm -lCAENVME -lCAENDigitizer
+# CAEN_CFLAGS =
+# CAEN_LDFLAGS = -lCAENComm -lCAENVME -lCAENDigitizer
 
 COMMON_SOURCES = $(COMMON_SRC_DIR)/utilities_functions.cpp
 COMMON_OBJECTS = $(COMMON_SOURCES:.cpp=.o)
