@@ -77,7 +77,6 @@ venv:
 		echo "Virtualenv NOT active"; \
 		if [ ! -d "$(VENV_NAME)" ]; then \
 			echo "Create virtualenv $(VENV_NAME) using Python $(PYTHON_VERSION)"; \
-			echo "For example, $(PYTHON_BIN) -m venv $(VENV_NAME)"; \
 			echo "For example, python$(PYTHON_VERSION) -m venv $(VENV_NAME)"; \
 		else \
 			echo "Virtualenv $(VENV_NAME) exists, please activate it."; \
