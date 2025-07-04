@@ -46,3 +46,5 @@ bin/events_counter
 absp/include/swigluarun.h
 absp/src/Digitizers_wrap.cpp
 abtp2/tofpet2
+abtp2/abtp2py/*
+abtp2/petsys_lib/*

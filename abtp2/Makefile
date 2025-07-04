@@ -1,38 +1,93 @@
-include ../common_definitions.mk
+CXX = clang++  # or g++
+CXXFLAGS = -fPIC -O2 -Wall -std=c++17
 
-# File names
-EXEC = tofpet2
+# Detect OS
+UNAME_S := $(shell uname -s)
+PWD := $(shell pwd)
 
-PETSYS_DIR := /home/petsys/sussex_petsys_v4
+# PETsys paths
+PETSYS_DIR := /Users/nt292/PETsys/sussex_petsys
+SRC_PETSYS = $(PETSYS_DIR)/src
+SRC_PETSYS_LIB = $(SRC_PETSYS)/petsys_py_lib
+SRC_PETSYS_RAW = $(SRC_PETSYS)/raw_data
 
-DAQD_SOURCES = \
-    $(PETSYS_DIR)/src/daqd/daqd.cpp \
-    $(PETSYS_DIR)/src/daqd/Client.cpp \
-    $(PETSYS_DIR)/src/daqd/FrameServer.cpp \
-    $(PETSYS_DIR)/src/daqd/UDPFrameServer.cpp \
-    $(PETSYS_DIR)/src/daqd/DAQFrameServer.cpp \
-    $(PETSYS_DIR)/src/daqd/PFP_KX7.cpp \
-    $(PETSYS_DIR)/src/raw_data/shm_raw.cpp
+# Python version and virtual environment
+VENV_NAME = abtp2py
+PYTHON_VERSION = 3.11
+PYTHON_BIN := ./${VENV_NAME}/bin/python
+PYTHON_CONFIG := python$(PYTHON_VERSION)-config
+PYTHON_INCLUDE := $(shell $(PYTHON_CONFIG) --includes)
+PYTHON_LIBS := $(shell $(PYTHON_CONFIG) --ldflags)
 
-SOURCES = $(DAQD_SOURCES) $(SRC_DIR)/actions.cpp $(SRC_DIR)/states.cpp 
+BOOST_PYTHON_LIB = -lboost_python$(subst .,,$(PYTHON_VERSION))
 
-OBJECTS = $(SOURCES:.cpp=.o)
+# OS-specific libraries
+ifeq ($(UNAME_S),Linux)
+	MACPORTS_PREFIX =
+	EXTRA_LIBS = -laio
+	INIPARSER_INCLUDE = -I/usr/include/iniparser
+else
+	MACPORTS_PREFIX = /opt/local
+	EXTRA_LIBS =
+	INIPARSER_INCLUDE =  # add if needed on macOS
+endif
 
-CXXFLAGS += -I $(PETSYS_DIR)/src/daqd -I $(PETSYS_DIR)/src/raw_data -I /usr/include/iniparser
-LDFLAGS += -L $(PETSYS_DIR)/src/daqd -L $(PETSYS_DIR)/src/raw_data -lrt -lboost_system -lboost_filesystem -lpthread -laio -ljansson
+LIBS = $(BOOST_PYTHON_LIB) $(PYTHON_LIBS) -liniparser $(EXTRA_LIBS)
+INCLUDES = $(PYTHON_INCLUDE) $(INIPARSER_INCLUDE) -I$(SRC_PETSYS_RAW)
 
-.PHONY: all clean
+# Files to copy
+PETSYS_SCRIPTS = \
+	__init__.py tofpet2b.py tofpet2c.py info.py daqd.py bitarray_utils.py config.py \
+	spi.py i2c.py bias.py boot.py fe_temperature.py fe_eeprom.py fe_power.py \
+	fe_power_8k.py meta.py
 
-all: $(EXEC)
+# Directory creation target
+PETSYS_DEST = $(PWD)/petsys_lib
+$(PETSYS_DEST):
+	@if [ ! -d "$(PETSYS_DEST)" ]; then \
+		mkdir -p "$(PETSYS_DEST)"; \
+		echo "Created directory $(PETSYS_DEST)"; \
+	else \
+		echo "Directory $(PETSYS_DEST) already exists"; \
+	fi
 
-# To obtain object files
-%.o: %.cpp
-	$(CXX) -c $(CXXFLAGS) $< -o $@
+# Copy python scripts - pattern rule
+$(PETSYS_DEST)/%: $(SRC_PETSYS_LIB)/% | $(PETSYS_DEST)
+	cp $< $@
 
-# Main target
-$(EXEC): $(OBJECTS) $(EXEC).cpp
-	$(CXX) $(CXXFLAGS) $(EXEC).cpp $(OBJECTS) $(LDFLAGS) -o $(EXEC)
+PY_SCRIPTS_DST := $(addprefix $(PETSYS_DEST)/, $(PETSYS_SCRIPTS))
 
-# To remove generated files
+# C++ module
+SHM_SRC = $(SRC_PETSYS_RAW)/shm_raw.cpp $(SRC_PETSYS_RAW)/shm_raw_py.cpp
+SHM_OUT = $(PETSYS_DEST)/shm_raw.so
+
+# Rule to build shared module; depends on the output directory
+$(SHM_OUT): $(SHM_SRC) | $(PETSYS_DEST)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -shared $^ -o $@ \
+		-L$(MACPORTS_PREFIX)/lib $(LIBS)
+
+.PHONY: all venv clean petsys_copy build_shm
+
+all: venv petsys_copy $(SHM_OUT)
+
+petsys_copy: $(PY_SCRIPTS_DST)
+
+venv:
+	@if [ -z "$$VIRTUAL_ENV" ]; then \
+		echo "Virtualenv NOT active"; \
+		if [ ! -d "$(VENV_NAME)" ]; then \
+			echo "Create virtualenv $(VENV_NAME) using Python $(PYTHON_VERSION)"; \
+			echo "For example, $(PYTHON_BIN) -m venv $(VENV_NAME)"; \
+		else \
+			echo "Virtualenv $(VENV_NAME) exists, please activate it."; \
+			echo "For example, source $(VENV_NAME)/bin/activate"; \
+		fi; \
+		exit 1; \
+	else \
+		echo "Virtualenv active at $$VIRTUAL_ENV"; \
+	fi
+
+build_shm: $(SHM_OUT)
+
 clean:
-	rm -f $(EXEC) $(OBJECTS)
+	rm -rf $(PETSYS_DEST)
