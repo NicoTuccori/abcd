@@ -1,94 +1,70 @@
 # File: states.py
-from enum import Enum, auto
-from typing import List
-from .typedefs import state
+from .typedefs import state, action
+from . import actions
 
-# Define basic states
-class states(Enum):
-    START = auto()
-    CREATE_CONTEXT = auto()
-    CREATE_SOCKETS = auto()
-    BIND_SOCKETS = auto()
-    READ_CONFIG = auto()
-    CREATE_DIGITIZER = auto()
-    RECREATE_DIGITIZER = auto()
-    CONFIGURE_DIGITIZER = auto()
-    ALLOCATE_MEMORY = auto()
-    RECONFIGURE_CLEAR_MEMORY = auto()
-    RECONFIGURE_DESTROY_DIGITIZER = auto()
-    RECEIVE_COMMANDS = auto()
-    PUBLISH_STATUS = auto()
-    START_ACQUISITION = auto()
-    STOP_ACQUISITION = auto()
-    ACQUISITION_RECEIVE_COMMANDS = auto()
-    ADD_TO_BUFFER = auto()
-    PUBLISH_EVENTS = auto()
-    ACQUISITION_PUBLISH_STATUS = auto()
-    STOP_PUBLISH_EVENTS = auto()
-    CONTINUE_ACQUISITION = auto()
-    TRIGGER_RECONFIGURATION = auto()
-    RESTART_PUBLISH_EVENTS = auto()
-    RESTART_STOP_ACQUISITION = auto()
-    RESTART_CLEAR_MEMORY = auto()
-    RESTART_DESTROY_DIGITIZER = auto()
-    RESTART_CREATE_DIGITIZER = auto()
-    RESTART_CONFIGURE_DIGITIZER = auto()
-    RESTART_ALLOCATE_MEMORY = auto()
-    CLEAR_MEMORY = auto()
-    DESTROY_DIGITIZER = auto()
-    CLOSE_SOCKETS = auto()
-    DESTROY_CONTEXT = auto()
-    STOP = auto()
-    COMMUNICATION_ERROR = auto()
-    PARSE_ERROR = auto()
-    DIGITIZER_ERROR = auto()
-    CONFIGURE_ERROR = auto()
-    ACQUISITION_ERROR = auto()
-    RESTART_CONFIGURE_ERROR = auto()
+# Define states
+START =                         state(100, "Start",                         actions.start)
+CREATE_CONTEXT =                state(101, "Create ZeroMQ context",         actions.create_context)
+CREATE_SOCKETS =                state(102, "Create sockets",                actions.create_sockets)
+BIND_SOCKETS =                  state(103, "Bind sockets",                  actions.bind_sockets)
+READ_CONFIG =                   state(104, "Read configuration",            actions.read_config)
+# CREATE_DIGITIZER =              state(105, "Create digitizer",              actions.create_digitizer)
+# RECREATE_DIGITIZER =            state(106, "Recreate digitizer",            actions.recreate_digitizer)
+# CONFIGURE_DIGITIZER =           state(107, "Configure digitizer",           actions.configure_digitizer)
+# ALLOCATE_MEMORY =               state(108, "Allocate memory",               actions.allocate_memory)
+# RECONFIGURE_CLEAR_MEMORY =      state(109, "Reconfigure clear memory",      actions.reconfigure_clear_memory)
+# RECONFIGURE_DESTROY_DIGITIZER = state(110, "Reconfigure destroy digitizer", actions.reconfigure_destroy_digitizer)
 
-# List of all state entries mirroring C++ definitions
-STATE_TABLE: List[state] = [
-    state(100, "Start",     lambda s: None),
-    state(101, "Create ZeroMQ context",    lambda s: None),
-    state(102, "Create sockets",            lambda s: None),
-    state(103, "Bind sockets",              lambda s: None),
-    state(104, "Read configuration",        lambda s: None),
-    state(105, "Create digitizer",          lambda s: None),
-    state(106, "Recreate digitizer",        lambda s: None),
-    state(107, "Configure digitizer",       lambda s: None),
-    state(108, "Allocate memory",           lambda s: None),
-    state(109, "Reconfigure clear memory",  lambda s: None),
-    state(110, "Reconfigure destroy digitizer", lambda s: None),
-    state(201, "Receive commands",          lambda s: None),
-    state(202, "Publish status",            lambda s: None),
-    state(203, "Start acquisition",         lambda s: None),
-    state(204, "Stop acquisition",          lambda s: None),
-    state(301, "Acquisition receive commands", lambda s: None),
-    state(303, "Read and add to events buffer", lambda s: None),
-    state(304, "Publish events",            lambda s: None),
-    state(305, "Acquisition publish status",lambda s: None),
-    state(306, "Publish events (stop)",     lambda s: None),
-    state(307, "Continue acquisition",      lambda s: None),
-    state(308, "Trigger reconfiguration",   lambda s: None),
-    state(401, "Restart publish events",    lambda s: None),
-    state(402, "Restart stop acquisition",  lambda s: None),
-    state(403, "Restart clear memory",      lambda s: None),
-    state(404, "Restart destroy digitizer", lambda s: None),
-    state(405, "Restart create digitizer",  lambda s: None),
-    state(406, "Restart configure digitizer", lambda s: None),
-    state(407, "Restart allocate memory",   lambda s: None),
-    state(801, "Destroy digitizer object", lambda s: None),
-    state(802, "Destroy digitizer object", lambda s: None),
-    state(803, "Close sockets",            lambda s: None),
-    state(804, "Destroy ZeroMQ context",   lambda s: None),
-    state(899, "Stop",                     lambda s: None),
-    state(901, "Communication error",      lambda s: None),
-    state(902, "Config parse error",       lambda s: None),
-    state(903, "Digitizer error",         lambda s: None),
-    state(903, "Configure error",         lambda s: None),
-    state(904, "Acquisition error",        lambda s: None),
-    state(905, "Restart configure error",  lambda s: None),
+# RECEIVE_COMMANDS =              state(201, "Receive commands",              actions.receive_commands)
+# PUBLISH_STATUS =                state(202, "Publish status",                actions.publish_status)
+# START_ACQUISITION =             state(203, "Start acquisition",             actions.start_acquisition)
+# STOP_ACQUISITION =              state(204, "Stop acquisition",              actions.stop_acquisition)
+
+# ACQUISITION_RECEIVE_COMMANDS =  state(301, "Acquisition receive commands",  actions.acquisition_receive_commands)
+# ADD_TO_BUFFER =                 state(303, "Read and add to events buffer", actions.add_to_buffer)
+# PUBLISH_EVENTS =                state(304, "Publish events",                actions.publish_events)
+# ACQUISITION_PUBLISH_STATUS =    state(305, "Acquisition publish status",    actions.acquisition_publish_status)
+# STOP_PUBLISH_EVENTS =           state(306, "Publish events (stop)",         actions.stop_publish_events)
+# CONTINUE_ACQUISITION =          state(307, "Continue acquisition",          actions.continue_acquisition)
+# TRIGGER_RECONFIGURATION =       state(308, "Trigger reconfiguration",       actions.trigger_reconfiguration)
+
+# RESTART_PUBLISH_EVENTS =        state(401, "Restart publish events",        actions.restart_publish_events)
+# RESTART_STOP_ACQUISITION =      state(402, "Restart stop acquisition",      actions.restart_stop_acquisition)
+# RESTART_CLEAR_MEMORY =          state(403, "Restart clear memory",          actions.restart_clear_memory)
+# RESTART_DESTROY_DIGITIZER =     state(404, "Restart destroy digitizer",     actions.restart_destroy_digitizer)
+# RESTART_CREATE_DIGITIZER =      state(405, "Restart create digitizer",      actions.restart_create_digitizer)
+# RESTART_CONFIGURE_DIGITIZER =   state(406, "Restart configure digitizer",   actions.restart_configure_digitizer)
+# RESTART_ALLOCATE_MEMORY =       state(407, "Restart allocate memory",       actions.restart_allocate_memory)
+
+# CLEAR_MEMORY =                  state(801, "Clear memory",                  actions.clear_memory)
+# DESTROY_DIGITIZER =             state(802, "Destroy digitizer object",      actions.destroy_digitizer)
+CLOSE_SOCKETS =                 state(803, "Close sockets",                 actions.close_sockets)
+DESTROY_CONTEXT =               state(804, "Destroy ZeroMQ context",        actions.destroy_context)
+
+STOP =                          state(899, "Stop",                          actions.stop)
+
+COMMUNICATION_ERROR =           state(901, "Communication error",           actions.communication_error)
+PARSE_ERROR =                   state(902, "Config parse error",            actions.parse_error)
+# DIGITIZER_ERROR =               state(903, "Digitizer error",               actions.digitizer_error)
+# CONFIGURE_ERROR =               state(904, "Configure error",               actions.configure_error)
+# ACQUISITION_ERROR =             state(905, "Acquisition error",             actions.acquisition_error)
+# RESTART_CONFIGURE_ERROR =       state(906, "Restart configure error",       actions.restart_configure_error)
+
+# List of all states
+states = [
+    START, CREATE_CONTEXT, CREATE_SOCKETS, BIND_SOCKETS, READ_CONFIG,
+    # CREATE_DIGITIZER, RECREATE_DIGITIZER, CONFIGURE_DIGITIZER, ALLOCATE_MEMORY,
+    # RECONFIGURE_CLEAR_MEMORY, RECONFIGURE_DESTROY_DIGITIZER,
+    # RECEIVE_COMMANDS, PUBLISH_STATUS, START_ACQUISITION, STOP_ACQUISITION,
+    # ACQUISITION_RECEIVE_COMMANDS, ADD_TO_BUFFER, PUBLISH_EVENTS,
+    # ACQUISITION_PUBLISH_STATUS, STOP_PUBLISH_EVENTS, CONTINUE_ACQUISITION,
+    # TRIGGER_RECONFIGURATION, RESTART_PUBLISH_EVENTS, RESTART_STOP_ACQUISITION,
+    # RESTART_CLEAR_MEMORY, RESTART_DESTROY_DIGITIZER, RESTART_CREATE_DIGITIZER,
+    # RESTART_CONFIGURE_DIGITIZER, RESTART_ALLOCATE_MEMORY,
+    # CLEAR_MEMORY, DESTROY_DIGITIZER, 
+    CLOSE_SOCKETS, DESTROY_CONTEXT, STOP, COMMUNICATION_ERROR, PARSE_ERROR, 
+    # DIGITIZER_ERROR, CONFIGURE_ERROR, ACQUISITION_ERROR, RESTART_CONFIGURE_ERROR
 ]
 
-# Helper to lookup state by State enum
-STATE_MAP = {state: entry for state, entry in zip(states, STATE_TABLE)}
+# Helper to lookup state by ID
+STATE_MAP = {s.ID: s for s in states}

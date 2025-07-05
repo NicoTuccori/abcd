@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!~/abcd/abtp2/abtp2py/bin python3
 import argparse
 import zmq
 import json
@@ -16,15 +16,15 @@ import struct
 import json
 import signal
 
-from abtp2_py_lib.states import state
+import abtp2_py_lib.states as states
 from abtp2_py_lib.actions import *
-from abtp2_py_lib.typedefs import status
+from abtp2_py_lib.typedefs import *
 
 # Default ABCD defaults
 DEFAULT_STATUS_ADDR    = 'tcp://*:16180'
 DEFAULT_DATA_ADDR      = 'tcp://*:16181'
 DEFAULT_COMMAND_ADDR   = 'tcp://localhost:16182'
-DEFAULT_CONFIG_FILE    = '/etc/abcd/config.ini'
+DEFAULT_CONFIG_FILE    = '/home/petsys/abcd/abtp2/configs/Config_example.json'
 DEFAULT_BASE_PERIOD_MS = 100.0
 DEFAULT_DEVICE_NUMBER  = 0
 DEFAULT_EVENTS_BUFFER  = 1024
@@ -37,23 +37,6 @@ def signal_handler(signum, frame):
     global terminate_flag
     logging.info(f"Signal {signum} received, initiating shutdown...")
     terminate_flag = True
-
-CMD_TO_STATE = {
-    'create_context':     state.CREATE_CONTEXT,
-    'create_sockets':     state.CREATE_SOCKETS,
-    'create_digitizer':   state.CREATE_DIGITIZER,
-    'configure_digitizer': state.CONFIGURE_DIGITIZER,
-    'allocate_memory':    state.ALLOCATE_MEMORY,
-    'start_acquisition':  state.START_ACQUISITION,
-    'add_to_buffer':      state.ADD_TO_BUFFER,
-    'publish_events':     state.PUBLISH_EVENTS,
-    'stop_acquisition':   state.STOP_ACQUISITION,
-    'clear_memory':       state.CLEAR_MEMORY,
-    'destroy_digitizer':  state.DESTROY_DIGITIZER,
-    'close_sockets':      state.CLOSE_SOCKETS,
-    'destroy_context':    state.DESTROY_CONTEXT,
-    'shutdown':           state.STOP
-}
 
 if __name__ == '__main__':
 
@@ -124,25 +107,25 @@ if __name__ == '__main__':
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGHUP, signal_handler)
 
-    current_state = state.START
+    current_state = states.START
     stop_execution = False
 
     # Main FSM loop
     while not stop_execution:
 
         if terminate_flag:
-            current_state = state.CLEAR_MEMORY
+            current_state = states.CLEAR_MEMORY
             terminate_flag = False
             time.sleep(1)
 
-        if current_state == state.STOP:
-            logging.info("Reached STOP state, exiting.")
+        if current_state == states.STOP:
+            logging.info("Stop\t\t\t-> EXIT")
             stop_execution = True
 
         current_state = current_state.act(global_status)
 
         time.sleep(1)
 
-    logging.info("Terminated.")
+    logging.info("Terminated")
 
     sys.exit(0)

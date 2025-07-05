@@ -1,38 +1,28 @@
-CXX = clang++  # or g++
-CXXFLAGS = -fPIC -O2 -Wall -std=c++17
+CXX = g++
+CXXFLAGS = -fPIC -O3 -Wall -std=c++17 -m64 -DLINUX -pthread
 
-# Detect OS
-UNAME_S := $(shell uname -s)
 PWD := $(shell pwd)
 
 # PETsys paths
-PETSYS_DIR := /Users/nt292/PETsys/sussex_petsys
+PETSYS_DIR := /home/petsys/sussex_petsys_v4
 SRC_PETSYS = $(PETSYS_DIR)/src
 SRC_PETSYS_LIB = $(SRC_PETSYS)/petsys_py_lib
 SRC_PETSYS_RAW = $(SRC_PETSYS)/raw_data
+SHM_SRC = $(SRC_PETSYS_RAW)/shm_raw.cpp $(SRC_PETSYS_RAW)/shm_raw_py.cpp
+SHM_OUT = $(PETSYS_DEST)/shm_raw.so
 
 # Python version and virtual environment
 VENV_NAME = abtp2py
-PYTHON_VERSION = 3.11
+PYTHON_VERSION = 3.9
 PYTHON_BIN := ./${VENV_NAME}/bin/python
 PYTHON_CONFIG := python$(PYTHON_VERSION)-config
 PYTHON_INCLUDE := $(shell $(PYTHON_CONFIG) --includes)
-PYTHON_LIBS := $(shell $(PYTHON_CONFIG) --ldflags)
 
-BOOST_PYTHON_LIB = -lboost_python$(subst .,,$(PYTHON_VERSION))
+PYTHON_LIBS = -lpython$(PYTHON_VERSION)
 
-# OS-specific libraries
-ifeq ($(UNAME_S),Linux)
-	MACPORTS_PREFIX =
-	EXTRA_LIBS = -laio
-	INIPARSER_INCLUDE = -I/usr/include/iniparser
-else
-	MACPORTS_PREFIX = /opt/local
-	EXTRA_LIBS =
-	INIPARSER_INCLUDE =  # add if needed on macOS
-endif
+BOOST_PYTHON_LIB = -lboost_python3 -lboost_regex
 
-LIBS = $(BOOST_PYTHON_LIB) $(PYTHON_LIBS) -liniparser $(EXTRA_LIBS)
+LIBS = $(BOOST_PYTHON_LIB) $(PYTHON_LIBS) -liniparser -laio -lrt -lpthread
 INCLUDES = $(PYTHON_INCLUDE) $(INIPARSER_INCLUDE) -I$(SRC_PETSYS_RAW)
 
 # Files to copy
@@ -63,8 +53,7 @@ SHM_OUT = $(PETSYS_DEST)/shm_raw.so
 
 # Rule to build shared module; depends on the output directory
 $(SHM_OUT): $(SHM_SRC) | $(PETSYS_DEST)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -shared $^ -o $@ \
-		-L$(MACPORTS_PREFIX)/lib $(LIBS)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -shared $^ -o $@ $(LIBS)
 
 .PHONY: all venv clean petsys_copy build_shm
 

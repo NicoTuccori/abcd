@@ -45,7 +45,7 @@ class status:
 
     # User-defined fields
     events_buffer_max_size: int = 1024
-    config_file: str = '/etc/abcd/config.ini'
+    config_file: str = '/home/petsys/abcd/abtp2/configs/Config_example.json'
     device_number: int = 0
     daq_cards_list: List[str] = field(default_factory=list)
 
@@ -53,13 +53,13 @@ class status:
         self.last_publication = time.time()
 
 # Equivalent to C++ struct state
-Action = Callable[[status], Any]
+action = Callable[[status], Any]
 
 @dataclass
 class state:
     ID: int
     description: str
-    act: Action
+    act: action
 
     # Equality based on ID
     def __eq__(self, other: Any) -> bool:
