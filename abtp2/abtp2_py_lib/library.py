@@ -29,11 +29,7 @@ def send_byte_message(socket: zmq.Socket,
 
     try:
         # socket.send returns number of bytes on success
-        sent = socket.send(envelope)
-        if sent != len(envelope):
-            if verbosity > 0:
-                print(f"ERROR: ZeroMQ send returned {sent} != {len(envelope)}", file=sys.stderr)
-            return False
+        socket.send(envelope)
         return True
 
     except zmq.ZMQError as e:

@@ -1,24 +1,12 @@
 #!~/abcd/abtp2/abtp2py/bin python3
 import argparse
-import zmq
-import json
-import datetime
 import logging
-import threading
-import queue
 import time
-import sched
 import sys
-import os
-import math
-import random
-import struct
-import json
 import signal
 
 import abtp2_py_lib.states as states
-from abtp2_py_lib.actions import *
-from abtp2_py_lib.typedefs import *
+from abtp2_py_lib.typedefs import status
 
 # Default ABCD defaults
 DEFAULT_STATUS_ADDR    = 'tcp://*:16180'
@@ -58,12 +46,6 @@ if __name__ == '__main__':
                         help='Commands SUB socket address')
     parser.add_argument('-f', '--config-file', default=DEFAULT_CONFIG_FILE,
                         help='Path to digitizer configuration file')
-    parser.add_argument('-T', '--base-period', type=float, default=DEFAULT_BASE_PERIOD_MS,
-                        help='Main loop period in milliseconds')
-    parser.add_argument('-n', '--device-number', type=int, default=DEFAULT_DEVICE_NUMBER,
-                        help='Device number identifier')
-    parser.add_argument('-B', '--events-buffer-size', type=int, default=DEFAULT_EVENTS_BUFFER,
-                        help='Maximum events buffer size')
     parser.add_argument('-s', '--socket-name', default=DEFAULT_SOCKET_NAME,
                         help='Underlying DAQ socket name, e.g. /tmp/d.sock')
     parser.add_argument('-d', '--daq-type', default=DEFAULT_DAQ_TYPE,
@@ -83,24 +65,33 @@ if __name__ == '__main__':
     if len(args.daq_cards) > 2:
         logging.error("Maximum number of DAQ cards (2) exceeded.")
         exit(1)
+    global_status.daq_card = args.daq_cards
 
     # Determine port bits
     daq_port_bits = 5 if len(args.daq_cards)==1 else 2
+    global_status.daq_card_port_bits = daq_port_bits
+
+    global_status.verbosity = args.verbose
+    global_status.status_address = args.status_address
+    global_status.data_address = args.data_address
+    global_status.commands_address = args.command_address
+    global_status.config_file = args.config_file
 
     # Logging
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format='[%(asctime)s] %(levelname)s: %(message)s')
-    logging.info(f"Device number: {args.device_number}")
-    logging.info(f"Status address: {args.status_address}")
-    logging.info(f"Data address: {args.data_address}")
-    logging.info(f"Command address: {args.command_address}")
-    logging.info(f"Config file: {args.config_file}")
-    logging.info(f"Base period: {args.base_period} ms")
-    logging.info(f"Events buffer size: {args.events_buffer_size}")
-    logging.info(f"Socket name: {args.socket_name}")
-    logging.info(f"DAQ type: {args.daq_type}")
-    logging.info(f"DAQ cards: {args.daq_cards}")
-    logging.info(f"DAQ port bits: {daq_port_bits}")
+    logging.basicConfig(
+        level=logging.INFO,
+        format='[%(asctime)s] %(levelname)s: %(message)s'
+    )
+    
+    if global_status.verbosity:
+        logging.info(f"Status address: {args.status_address}")
+        logging.info(f"Data address: {args.data_address}")
+        logging.info(f"Command address: {args.command_address}")
+        logging.info(f"Config file: {args.config_file}")
+        logging.info(f"Socket name: {args.socket_name}")
+        logging.info(f"DAQ type: {args.daq_type}")
+        logging.info(f"DAQ cards: {args.daq_cards}")
+        logging.info(f"DAQ port bits: {daq_port_bits}")
 
     # Signals
     signal.signal(signal.SIGINT, signal_handler)
@@ -110,7 +101,8 @@ if __name__ == '__main__':
     current_state = states.START
     stop_execution = False
 
-    # Main FSM loop
+    logging.info("Let's go!")
+
     while not stop_execution:
 
         if terminate_flag:
@@ -119,7 +111,8 @@ if __name__ == '__main__':
             time.sleep(1)
 
         if current_state == states.STOP:
-            logging.info("Stop\t\t\t-> EXIT")
+            if global_status.verbosity > 0:
+                logging.info("Stop\t\t\t-> EXIT")
             stop_execution = True
 
         current_state = current_state.act(global_status)

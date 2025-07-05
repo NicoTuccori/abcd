@@ -1,5 +1,5 @@
 # File: states.py
-from .typedefs import state, action
+from .typedefs import state
 from . import actions
 
 # Define states
@@ -8,7 +8,7 @@ CREATE_CONTEXT =                state(101, "Create ZeroMQ context",         acti
 CREATE_SOCKETS =                state(102, "Create sockets",                actions.create_sockets)
 BIND_SOCKETS =                  state(103, "Bind sockets",                  actions.bind_sockets)
 READ_CONFIG =                   state(104, "Read configuration",            actions.read_config)
-# CREATE_DIGITIZER =              state(105, "Create digitizer",              actions.create_digitizer)
+CREATE_DIGITIZER =              state(105, "Create digitizer",              actions.create_digitizer)
 # RECREATE_DIGITIZER =            state(106, "Recreate digitizer",            actions.recreate_digitizer)
 # CONFIGURE_DIGITIZER =           state(107, "Configure digitizer",           actions.configure_digitizer)
 # ALLOCATE_MEMORY =               state(108, "Allocate memory",               actions.allocate_memory)
@@ -37,7 +37,7 @@ READ_CONFIG =                   state(104, "Read configuration",            acti
 # RESTART_ALLOCATE_MEMORY =       state(407, "Restart allocate memory",       actions.restart_allocate_memory)
 
 # CLEAR_MEMORY =                  state(801, "Clear memory",                  actions.clear_memory)
-# DESTROY_DIGITIZER =             state(802, "Destroy digitizer object",      actions.destroy_digitizer)
+DESTROY_DIGITIZER =             state(802, "Destroy digitizer object",      actions.destroy_digitizer)
 CLOSE_SOCKETS =                 state(803, "Close sockets",                 actions.close_sockets)
 DESTROY_CONTEXT =               state(804, "Destroy ZeroMQ context",        actions.destroy_context)
 
@@ -46,14 +46,15 @@ STOP =                          state(899, "Stop",                          acti
 COMMUNICATION_ERROR =           state(901, "Communication error",           actions.communication_error)
 PARSE_ERROR =                   state(902, "Config parse error",            actions.parse_error)
 # DIGITIZER_ERROR =               state(903, "Digitizer error",               actions.digitizer_error)
-# CONFIGURE_ERROR =               state(904, "Configure error",               actions.configure_error)
+CONFIGURE_ERROR =               state(904, "Configure error",               actions.configure_error)
 # ACQUISITION_ERROR =             state(905, "Acquisition error",             actions.acquisition_error)
 # RESTART_CONFIGURE_ERROR =       state(906, "Restart configure error",       actions.restart_configure_error)
 
 # List of all states
 states = [
     START, CREATE_CONTEXT, CREATE_SOCKETS, BIND_SOCKETS, READ_CONFIG,
-    # CREATE_DIGITIZER, RECREATE_DIGITIZER, CONFIGURE_DIGITIZER, ALLOCATE_MEMORY,
+    CREATE_DIGITIZER, 
+    # RECREATE_DIGITIZER, CONFIGURE_DIGITIZER, ALLOCATE_MEMORY,
     # RECONFIGURE_CLEAR_MEMORY, RECONFIGURE_DESTROY_DIGITIZER,
     # RECEIVE_COMMANDS, PUBLISH_STATUS, START_ACQUISITION, STOP_ACQUISITION,
     # ACQUISITION_RECEIVE_COMMANDS, ADD_TO_BUFFER, PUBLISH_EVENTS,
@@ -61,9 +62,10 @@ states = [
     # TRIGGER_RECONFIGURATION, RESTART_PUBLISH_EVENTS, RESTART_STOP_ACQUISITION,
     # RESTART_CLEAR_MEMORY, RESTART_DESTROY_DIGITIZER, RESTART_CREATE_DIGITIZER,
     # RESTART_CONFIGURE_DIGITIZER, RESTART_ALLOCATE_MEMORY,
-    # CLEAR_MEMORY, DESTROY_DIGITIZER, 
-    CLOSE_SOCKETS, DESTROY_CONTEXT, STOP, COMMUNICATION_ERROR, PARSE_ERROR, 
-    # DIGITIZER_ERROR, CONFIGURE_ERROR, ACQUISITION_ERROR, RESTART_CONFIGURE_ERROR
+    # CLEAR_MEMORY, 
+    DESTROY_DIGITIZER, CLOSE_SOCKETS, DESTROY_CONTEXT, STOP, COMMUNICATION_ERROR, PARSE_ERROR,
+    CONFIGURE_ERROR
+    # DIGITIZER_ERROR, ACQUISITION_ERROR, RESTART_CONFIGURE_ERROR
 ]
 
 # Helper to lookup state by ID

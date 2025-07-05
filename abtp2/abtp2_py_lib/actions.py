@@ -5,21 +5,159 @@ from .library import send_byte_message, receive_byte_message
 from .typedefs import status
 from . import states
 
-import sys
 import os
 
-from .petsys_lib import daqd
+from .petsys_lib import daqd, config
 
 # Define or import your delay constant (ms)
 defaults_abcd_zmq_delay = 100  # replace with actual constant if needed
+defaults_abcd_events_topic = "events_abcd"
 
-# Helper debug printer
-def dbg(s, *args):
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{ts}] " + s.format(*args))
+#******************************************************************************/
+#* Generic actions                                                            */
+#******************************************************************************/
+
+def generic_publish_message(s: status, topic: str, status_message: dict):
+    # Update timestamp and message ID
+    s.last_publication = datetime.now()
+    status_message["module"] = "abtp2"
+    status_message["timestamp"] = s.last_publication.isoformat()
+    status_message["msg_ID"] = s.status_msg_ID
+
+    try:
+        output_buffer = json.dumps(status_message, separators=(",", ":")).encode('utf-8')
+    except (TypeError, ValueError) as e:
+        logging.error(f"Unable to encode status message to JSON: {e}")
+        return
+
+    total_size = len(output_buffer)
+    topic_with_suffix = f"{topic}_v0_s{total_size}".encode('utf-8')
+
+    if s.verbosity > 0:
+        logging.info(f"Sending status message; Topic: {topic_with_suffix.decode()}; "
+                     f"Size: {total_size}; Message: {output_buffer.decode(errors='replace')}")
+
+    success = send_byte_message(
+        socket=s.status_socket,
+        topic=topic_with_suffix,
+        buffer=output_buffer,
+        verbosity=s.verbosity
+    )
+
+    if not success:
+        logging.warning("Message failed to send on ZeroMQ socket.")
+
+    s.status_msg_ID += 1
+
+def generic_create_digitizer(s: status) -> bool:
+
+    # Remove socket file if it exists
+    if os.path.exists(s.clientSocketName):
+        if s.verbosity > 0:
+            logging.info(f"Found existing {s.clientSocketName}, removing.")
+        try:
+            os.unlink(s.clientSocketName)
+        except Exception as e:
+            logging.error(f"Failed to remove {s.clientSocketName}: {e}")
+            return False
+
+    # Remove shared memory file if it exists
+    if os.path.exists(s.shmName):
+        if s.verbosity > 0:
+            logging.info(f"Found existing {s.shmName}, removing.")
+        try:
+            os.unlink(s.shmName)
+        except Exception as e:
+            logging.error(f"Failed to remove {s.shmName}: {e}")
+            return False
+
+    # Start daqd
+    if s.verbosity > 0:
+        logging.info("Initialising PETsys device")
+
+    s.connection = daqd.Connection()
+    # s.connection.initializeSystem()
+
+    return True
+
+def destroy_digitizer(s: status) -> None:
+
+    if s.verbosity > 0:
+        logging.info("Destroying digitizer")
+
+    # TO DO
+
+#******************************************************************************/
+#* Digitizer-specific actions                                                   */
+#******************************************************************************/
+
+def read_config(s: status):
+    config_file_name = s.config_file
+
+    if s.verbosity > 0:
+        logging.info(f"Reading config file: {config_file_name}")
+
+    try:
+        with open(config_file_name, 'r') as f:
+            new_config = json.load(f)
+    except json.JSONDecodeError as e:
+        logging.error(f"Parse error while reading config file: {e.msg} "
+              f"(line: {e.lineno}, column: {e.colno})")
+        return states.PARSE_ERROR
+    except FileNotFoundError:
+        logging.error(f"Config file not found: {config_file_name}")
+        return states.PARSE_ERROR
+    except Exception as e:
+        logging.error(f"Unexpected error reading config file: {e}")
+        return states.PARSE_ERROR
+
+    s.config = new_config
+    if s.verbosity > 0:
+        logging.info(f"Read config\t\t-> OK\t-> CREATE DIGITIZER")
+    # return states.CREATE_DIGITIZER
+    return states.COMMUNICATION_ERROR
+
+def create_digitizer(s: status):
+    
+    json_event_message = {
+        "type": "event",
+        "event": "Digitizer initialization"
+    }
+
+    generic_publish_message(s, defaults_abcd_events_topic, json_event_message)
+
+    # Call the digitizer creation logic
+    success = generic_create_digitizer(s)
+
+    if success:
+        if s.verbosity > 0:
+            logging.info("Create digitizer\t\t-> OK\t-> CONFIGURE_DIGITIZER")
+        # return states.CONFIGURE_DIGITIZER
+        return states.COMMUNICATION_ERROR
+    else:
+        logging.error("Digitizer creation failed")
+        return states.CONFIGURE_ERROR
+    
+def destroy_digitizer(s: status):
+
+    json_event_message = {
+        "type": "event",
+        "event": "Digitizer deactivation"
+    }
+
+    generic_publish_message(s, defaults_abcd_events_topic, json_event_message)
+
+    generic_destroy_digitizer(s)
+
+    return states.CLOSE_SOCKETS
+
+#******************************************************************************/
+#* Sockets-specific actions                                                   */
+#******************************************************************************/
 
 def start(s: status):
-    logging.info(f"Start\t\t\t-> GO\t-> CREATE CONTEXT")
+    if s.verbosity > 0:
+        logging.info(f"Start\t\t\t-> GO\t-> CREATE CONTEXT")
     return states.CREATE_CONTEXT
 
 def stop(s: status):
@@ -35,7 +173,8 @@ def create_context(s: status):
     s.context = context
 
     time.sleep(defaults_abcd_zmq_delay / 1000.0)  # delay in seconds
-    logging.info(f"Create context\t\t-> OK\t-> CREATE SOCKETS")
+    if s.verbosity > 0:
+        logging.info(f"Create context\t\t-> OK\t-> CREATE SOCKETS")
 
     return states.CREATE_SOCKETS
 
@@ -69,7 +208,8 @@ def create_sockets(s: status):
     s.commands_socket = commands_socket
 
     time.sleep(defaults_abcd_zmq_delay / 1000.0)  # sleep uses seconds
-    logging.info(f"Sockets create\t\t-> OK\t-> BIND SOCKETS")
+    if s.verbosity > 0:
+        logging.info(f"Sockets create\t\t-> OK\t-> BIND SOCKETS")
 
     return states.BIND_SOCKETS
 
@@ -93,67 +233,56 @@ def bind_sockets(s: status):
         return states.COMMUNICATION_ERROR
 
     time.sleep(defaults_abcd_zmq_delay / 1000.0)  # sleep in seconds
-    logging.info(f"Bind sockets\t\t-> OK\t-> READ CONFIG")
+    if s.verbosity > 0:
+        logging.info(f"Bind sockets\t\t-> OK\t-> READ CONFIG")
 
     return states.READ_CONFIG
 
-def read_config(s: status):
-    config_file_name = s.config_file
-
-    if s.verbosity > 0:
-        time_str = datetime.now().isoformat()
-        print(f"[{time_str}] Reading config file: {config_file_name}")
-
-    try:
-        with open(config_file_name, 'r') as f:
-            new_config = json.load(f)
-    except json.JSONDecodeError as e:
-        logging.error(f"Parse error while reading config file: {e.msg} "
-              f"(line: {e.lineno}, column: {e.colno})")
-        return states.PARSE_ERROR
-    except FileNotFoundError:
-        logging.error(f"Config file not found: {config_file_name}")
-        return states.PARSE_ERROR
-    except Exception as e:
-        logging.error(f"Unexpected error reading config file: {e}")
-        return states.PARSE_ERROR
-
-    s.config = new_config
-    logging.info(f"Read config\t\t-> OK\t-> CREATE DIGITIZER")
-    # return states.CREATE_DIGITIZER
-    return states.COMMUNICATION_ERROR
+#******************************************************************************/
+#* Errors-specific actions                                                    */
+#******************************************************************************/
 
 def parse_error(s: status):
-    # Construct the error message as a Python dict (equivalent to JSON object)
+    
     json_event_message = {
         "type": "error",
-        "error": "Communication error"
+        "error": "Config parse error"
     }
 
-    # Publish the error message on the events topic
-    # generic_actions.publish_message(s, "events_topic", json_event_message)  # replace "events_topic" with your actual topic constant
+    generic_publish_message(s, defaults_abcd_events_topic, json_event_message)
 
-    # No explicit JSON ref decrement needed in Python (GC handles it)
-
-    logging.info(f"Parse error\t\t-> OK\t-> CLOSE SOCKETS")
+    if s.verbosity > 0:
+        logging.info(f"Parse error\t\t-> OK\t-> CLOSE SOCKETS")
 
     return states.CLOSE_SOCKETS
 
 def communication_error(s: status):
-    # Construct the error message as a Python dict (equivalent to JSON object)
+    
     json_event_message = {
         "type": "error",
         "error": "Communication error"
     }
 
-    # Publish the error message on the events topic
-    # generic_actions.publish_message(s, "events_topic", json_event_message)  # replace "events_topic" with your actual topic constant
+    generic_publish_message(s, defaults_abcd_events_topic, json_event_message)
 
-    # No explicit JSON ref decrement needed in Python (GC handles it)
-
-    logging.info(f"Communication error\t-> OK\t-> CLOSE SOCKETS")
+    if s.verbosity > 0:
+        logging.info(f"Communication error\t-> OK\t-> CLOSE SOCKETS")
 
     return states.CLOSE_SOCKETS
+
+def configure_error(s: status):
+    
+    json_event_message = {
+        "type": "error",
+        "error": "Configure error"
+    }
+
+    generic_publish_message(s, defaults_abcd_events_topic, json_event_message)
+
+    if s.verbosity > 0:
+        logging.info(f"Configure error\t-> OK\t-> DESTROY DIGITIZER")
+
+    return states.DESTROY_DIGITIZER
 
 def close_sockets(s: status):
     time.sleep(defaults_abcd_zmq_delay / 1000.0)  # delay in seconds
@@ -168,7 +297,8 @@ def close_sockets(s: status):
     try_close_socket(s.data_socket, "data")
     try_close_socket(s.commands_socket, "commands")
 
-    logging.info(f"Close sockets\t\t-> OK\t-> DESTROY CONTEXT")
+    if s.verbosity > 0:
+        logging.info(f"Close sockets\t\t-> OK\t-> DESTROY CONTEXT")
 
     return states.DESTROY_CONTEXT
 
@@ -182,6 +312,7 @@ def destroy_context(s: status):
         except zmq.ZMQError as e:
             logging.error(f"ZeroMQ Error on context destroy: {e}")
 
-    logging.info(f"Destroy context\t\t-> OK\t-> STOP")
+    if s.verbosity > 0:
+        logging.info(f"Destroy context\t\t-> OK\t-> STOP")
 
     return states.STOP
