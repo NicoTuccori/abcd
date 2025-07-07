@@ -62,34 +62,33 @@ def generic_publish_message(s: status, topic: str, status_message: dict):
 def generic_create_digitizer(s: status) -> bool:
 
     # Remove socket file if it exists
-    if os.path.exists(s.clientSocketName):
+    if os.path.exists(s.client_socket_name):
         if s.verbosity > 0:
-            logging.info(f"Found existing {s.clientSocketName}, removing.")
+            logging.info(f"Found existing {s.client_socket_name}, removing.")
         try:
-            os.unlink(s.clientSocketName)
+            os.unlink(s.client_socket_name)
         except Exception as e:
-            logging.error(f"Failed to remove {s.clientSocketName}: {e}")
+            logging.error(f"Failed to remove {s.client_socket_name}: {e}")
             return False
 
     # Remove shared memory file if it exists
-    if os.path.exists(s.shmName):
+    if os.path.exists(s.shm_name):
         if s.verbosity > 0:
-            logging.info(f"Found existing {s.shmName}, removing.")
+            logging.info(f"Found existing {s.shm_name}, removing.")
         try:
-            os.unlink(s.shmName)
+            os.unlink(s.shm_name)
         except Exception as e:
-            logging.error(f"Failed to remove {s.shmName}: {e}")
+            logging.error(f"Failed to remove {s.shm_name}: {e}")
             return False
 
     # Start daqd
     if s.verbosity > 0:
-        logging.info("Initialising PETsys device")
-        logging.info("Starting C++ DAQ daemon...")
+        logging.info("Starting C++ DAQ daemon")
     
     # Initialize and start the C++ daqd daemon
     try:
         s.daemon = daqd_daemon(
-            daqd_executable='./daqd',
+            daqd_executable='./abtp2_py_lib/petsys_lib/daqd',
             daq_type=s.daq_type,
             socket_path=s.client_socket_name,
             debug_level=2,
@@ -144,8 +143,8 @@ def read_config(s: status):
     s.config = new_config
     if s.verbosity > 0:
         logging.info(f"Read config\t\t-> OK\t-> CREATE DIGITIZER")
-    # return states.CREATE_DIGITIZER
-    return states.COMMUNICATION_ERROR
+    return states.CREATE_DIGITIZER
+    # return states.COMMUNICATION_ERROR
 
 def create_digitizer(s: status):
     
@@ -162,8 +161,9 @@ def create_digitizer(s: status):
     if success:
         if s.verbosity > 0:
             logging.info("Create digitizer\t\t-> OK\t-> CONFIGURE_DIGITIZER")
+        time.sleep(20)
         # return states.CONFIGURE_DIGITIZER
-        return states.COMMUNICATION_ERROR
+        return states.DESTROY_DIGITIZER
     else:
         logging.error("Digitizer creation failed")
         return states.CONFIGURE_ERROR
@@ -310,7 +310,7 @@ def configure_error(s: status):
     generic_publish_message(s, defaults_abcd_events_topic, json_event_message)
 
     if s.verbosity > 0:
-        logging.info(f"Configure error\t-> OK\t-> DESTROY DIGITIZER")
+        logging.info(f"Configure error\t\t-> OK\t-> DESTROY DIGITIZER")
 
     return states.DESTROY_DIGITIZER
 

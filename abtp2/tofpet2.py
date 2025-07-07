@@ -49,17 +49,17 @@ if __name__ == '__main__':
 
     # Argument parsing
     parser = argparse.ArgumentParser(description="ABCD-style PETsys DAQ module in Python")
-    parser.add_argument('-S', '--status-address', default=DEFAULT_STATUS_ADDR,
+    parser.add_argument('-S', '--status-address', dest='status_address', default=DEFAULT_STATUS_ADDR,
                         help='Status PUB socket address')
-    parser.add_argument('-D', '--data-address', default=DEFAULT_DATA_ADDR,
+    parser.add_argument('-D', '--data-address', dest='data_address', default=DEFAULT_DATA_ADDR,
                         help='Data PUB socket address')
-    parser.add_argument('-C', '--command-address', default=DEFAULT_COMMAND_ADDR,
+    parser.add_argument('-C', '--command-address', dest='command_address', default=DEFAULT_COMMAND_ADDR,
                         help='Commands SUB socket address')
-    parser.add_argument('-f', '--config-file', default=DEFAULT_CONFIG_FILE,
+    parser.add_argument('-f', '--config-file', dest='config_file', default=DEFAULT_CONFIG_FILE,
                         help='Path to digitizer configuration file')
-    parser.add_argument('-s', '--socket-name', default=DEFAULT_SOCKET_NAME,
+    parser.add_argument('-s', '--socket-name', dest='socket_name', default=DEFAULT_SOCKET_NAME,
                         help='Underlying DAQ socket name, e.g. /tmp/d.sock')
-    parser.add_argument('-d', '--daq-type', default=DEFAULT_DAQ_TYPE,
+    parser.add_argument('-d', '--daq-type', dest='daq_type', default=DEFAULT_DAQ_TYPE,
                         choices=['GBE','PFP_KX7'],
                         help='DAQ transport type')
     parser.add_argument('-c', '--daq-card', dest='daq_cards', action='append',
@@ -76,7 +76,7 @@ if __name__ == '__main__':
     if len(args.daq_cards) > 2:
         logging.error("Maximum number of DAQ cards (2) exceeded.")
         exit(1)
-    global_status.daq_card = args.daq_cards
+    global_status.daq_cards = args.daq_cards
 
     # Determine port bits
     daq_port_bits = 5 if len(args.daq_cards)==1 else 2
@@ -87,6 +87,8 @@ if __name__ == '__main__':
     global_status.data_address = args.data_address
     global_status.commands_address = args.command_address
     global_status.config_file = args.config_file
+    global_status.daq_type = args.daq_type
+    global_status.client_socket_name = args.socket_name
 
     # Logging
     logging.basicConfig(
@@ -95,13 +97,13 @@ if __name__ == '__main__':
     )
     
     if global_status.verbosity:
-        logging.info(f"Status address: {args.status_address}")
-        logging.info(f"Data address: {args.data_address}")
-        logging.info(f"Command address: {args.command_address}")
-        logging.info(f"Config file: {args.config_file}")
-        logging.info(f"Socket name: {args.socket_name}")
-        logging.info(f"DAQ type: {args.daq_type}")
-        logging.info(f"DAQ cards: {args.daq_cards}")
+        logging.info(f"Status address: {global_status.status_address}")
+        logging.info(f"Data address: {global_status.data_address}")
+        logging.info(f"Command address: {global_status.commands_address}")
+        logging.info(f"Config file: {global_status.config_file}")
+        logging.info(f"Socket name: {global_status.client_socket_name}")
+        logging.info(f"DAQ type: {global_status.daq_type}")
+        logging.info(f"DAQ cards: {global_status.daq_cards}")
         logging.info(f"DAQ port bits: {daq_port_bits}")
 
     # Signals

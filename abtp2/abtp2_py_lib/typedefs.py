@@ -16,6 +16,91 @@ import subprocess
 import time
 import os
 import socket
+import threading
+
+# manager of the daqd daemon
+class daqd_daemon:
+    def __init__(self,
+                 daqd_executable: str    = "./daqd",
+                 daq_type: str           = "GBE",
+                 socket_path: str        = "/tmp/d.sock",
+                 shm_name: str           = "/daqd_shm",
+                 debug_level: int        = 1,
+                 card_paths: list[str]   = ["/dev/psdaq0"],
+                 startup_timeout: float  = 5.0):
+        """
+        Launches the C++ daqd daemon and waits for it to listen on the UNIX socket.
+        """
+        # Build the command line
+        cmd = [
+            daqd_executable,
+            "--daq-type",   daq_type,
+            "--socket-name", socket_path,
+            "--debug-level", str(debug_level),
+        ]
+        # allow multiple --card entries
+        for card in card_paths:
+            cmd += ["--card", card]
+
+        # Remove any stale socket
+        try:
+            os.unlink(socket_path)
+        except FileNotFoundError:
+            pass
+
+        def stream_output(stream, label):
+            for line in iter(stream.readline, ''):
+                print(f"[{label}] {line.rstrip()}")
+
+        # Spawn the daemon
+        cmd = ['stdbuf', '-oL'] + cmd
+        self.proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=1,  # Line-buffered
+            text=True,
+            close_fds=True
+        )
+
+        # Start threads to read both stdout and stderr
+        threading.Thread(target=stream_output, args=(self.proc.stdout, "DAQD - OUT"), daemon=True).start()
+        threading.Thread(target=stream_output, args=(self.proc.stdout, "DAQD - ERROR"), daemon=True).start()
+
+        # Wait for the socket to appear & be connectable
+        deadline = time.time() + startup_timeout
+        while time.time() < deadline:
+            if os.path.exists(socket_path):
+                try:
+                    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    sock.settimeout(0.2)
+                    sock.connect(socket_path)
+                    sock.close()
+                    break
+                except (ConnectionRefusedError, socket.timeout):
+                    pass
+            time.sleep(0.1)
+        else:
+            # timed out
+            self.proc.terminate()
+            raise RuntimeError(f"daqd did not start listening on {socket_path}")
+
+    def stop(self):
+        """
+        Ask the daemon to exit (via SIGINT) and wait for it to die.
+        """
+        if self.proc.poll() is None:
+            self.proc.send_signal(subprocess.signal.SIGINT)
+            try:
+                self.proc.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.stop()
 
 @dataclass
 class status:
@@ -85,76 +170,3 @@ class state:
             return False
         return self.ID == other.ID
     
-
-# manager of the daqd daemon
-class daqd_daemon:
-    def __init__(self,
-                 daqd_executable: str    = "./daqd",
-                 daq_type: str           = "GBE",
-                 socket_path: str        = "/tmp/d.sock",
-                 shm_name: str           = "/daqd_shm",
-                 debug_level: int        = 1,
-                 card_paths: list[str]   = ["/dev/psdaq0"],
-                 startup_timeout: float  = 5.0):
-        """
-        Launches the C++ daqd daemon and waits for it to listen on the UNIX socket.
-        """
-        # Build the command line
-        cmd = [
-            daqd_executable,
-            "--daq-type",   daq_type,
-            "--socket-name", socket_path,
-            "--debug-level", str(debug_level),
-        ]
-        # allow multiple --card entries
-        for card in card_paths:
-            cmd += ["--card", card]
-
-        # Remove any stale socket
-        try:
-            os.unlink(socket_path)
-        except FileNotFoundError:
-            pass
-
-        # Spawn the daemon
-        self.proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            close_fds=True
-        )
-
-        # Wait for the socket to appear & be connectable
-        deadline = time.time() + startup_timeout
-        while time.time() < deadline:
-            if os.path.exists(socket_path):
-                try:
-                    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                    sock.settimeout(0.2)
-                    sock.connect(socket_path)
-                    sock.close()
-                    break
-                except (ConnectionRefusedError, socket.timeout):
-                    pass
-            time.sleep(0.1)
-        else:
-            # timed out
-            self.proc.terminate()
-            raise RuntimeError(f"daqd did not start listening on {socket_path}")
-
-    def stop(self):
-        """
-        Ask the daemon to exit (via SIGINT) and wait for it to die.
-        """
-        if self.proc.poll() is None:
-            self.proc.send_signal(subprocess.signal.SIGINT)
-            try:
-                self.proc.wait(timeout=2.0)
-            except subprocess.TimeoutExpired:
-                self.proc.kill()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        self.stop()
