@@ -1,3 +1,12 @@
+# -----------------------------------------------------------------------------
+# This file is part of ABCD.
+# 2025 Nicolò Tuccori
+# -----------------------------------------------------------------------------
+
+"""
+Python-version of the functions defined in abcd/src/socket_functions.cpp
+"""
+
 import zmq
 import sys
 

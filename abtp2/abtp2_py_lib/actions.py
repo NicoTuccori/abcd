@@ -1,8 +1,18 @@
+# -----------------------------------------------------------------------------
+# This file is part of ABCD.
+# 2025 Nicolò Tuccori
+# -----------------------------------------------------------------------------
+
+"""
+Actions to interface and read PETsys TOFPET2 ASICs
+Python-version of standard ABCD actions
+"""
+
 import zmq, json, time
 from datetime import datetime
 import logging
 from .library import send_byte_message, receive_byte_message
-from .typedefs import status
+from .typedefs import status, daqd_daemon
 from . import states
 
 import os
@@ -74,16 +84,36 @@ def generic_create_digitizer(s: status) -> bool:
     # Start daqd
     if s.verbosity > 0:
         logging.info("Initialising PETsys device")
+        logging.info("Starting C++ DAQ daemon...")
+    
+    # Initialize and start the C++ daqd daemon
+    try:
+        s.daemon = daqd_daemon(
+            daqd_executable='./daqd',
+            daq_type=s.daq_type,
+            socket_path=s.client_socket_name,
+            debug_level=2,
+            card_paths=s.daq_cards
+        )
+        logging.info("DAQ daemon started successfully.")
+    except Exception as e:
+        logging.error(f"Failed to start DAQ daemon: {e}")
+        return False
 
     s.connection = daqd.Connection()
     # s.connection.initializeSystem()
 
     return True
 
-def destroy_digitizer(s: status) -> None:
+def generic_destroy_digitizer(s: status) -> None:
 
     if s.verbosity > 0:
         logging.info("Destroying digitizer")
+        logging.info("Shutting down DAQ daemon")
+    try:
+        s.daemon.stop()
+    except Exception as e:
+        logging.error(f"Error during shutdown: {e}")
 
     # TO DO
 

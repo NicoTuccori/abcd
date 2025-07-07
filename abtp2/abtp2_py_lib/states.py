@@ -1,4 +1,13 @@
-# File: states.py
+# -----------------------------------------------------------------------------
+# This file is part of ABCD.
+# 2025 Nicolò Tuccori
+# -----------------------------------------------------------------------------
+
+"""
+States to interface and read PETsys TOFPET2 ASICs
+Python-version of standard ABCD states
+"""
+
 from .typedefs import state
 from . import actions
 

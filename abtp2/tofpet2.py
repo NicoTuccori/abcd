@@ -1,4 +1,15 @@
+# -----------------------------------------------------------------------------
+# This file is part of ABCD.
+# 2025 Nicolò Tuccori
+# -----------------------------------------------------------------------------
+
+"""
+Main file to start the ABCD module to interface and read PETsys TOFPET2 ASICs
+Python-version of standard ABCD main module file
+"""
+
 #!~/abcd/abtp2/abtp2py/bin python3
+
 import argparse
 import logging
 import time
