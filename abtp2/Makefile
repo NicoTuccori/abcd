@@ -4,7 +4,7 @@ CXXFLAGS = -fPIC -O3 -Wall -std=c++17 -m64 -DLINUX -pthread
 PWD := $(shell pwd)
 
 # PETsys paths
-PETSYS_DIR := /home/petsys/sw_daq_tofpet2
+PETSYS_DIR := /home/petsys/sw_daq_tofpet2_abcd
 SRC_PETSYS = $(PETSYS_DIR)/src
 SRC_PETSYS_LIB = $(SRC_PETSYS)/petsys_py_lib
 SRC_PETSYS_RAW = $(SRC_PETSYS)/raw_data
@@ -24,16 +24,16 @@ PYTHON_LIBS = -lpython$(PYTHON_VERSION)
 BOOST_PYTHON_LIB = -lboost_python3 -lboost_regex
 
 LIBS = $(BOOST_PYTHON_LIB) $(PYTHON_LIBS) -liniparser -laio -lrt -lpthread
-INCLUDES = $(PYTHON_INCLUDE) $(INIPARSER_INCLUDE) -I$(SRC_PETSYS_RAW)
+INCLUDES = $(PYTHON_INCLUDE) $(INIPARSER_INCLUDE) -I$(SRC_PETSYS_RAW) -I$(SRC_PETSYS_DAQD) 
 
 # Files to copy
 PETSYS_PY_LIB = \
 	__init__.py tofpet2b.py tofpet2c.py info.py daqd.py bitarray_utils.py config.py \
 	spi.py i2c.py bias.py boot.py fe_temperature.py fe_eeprom.py fe_power.py \
-	fe_power_8k.py meta.py
+	fe_power_8k.py # meta.py
 
 # Directory creation target
-PETSYS_DEST = $(PWD)/petsys_lib
+PETSYS_DEST = $(PWD)/abtp2_py_lib/petsys_lib
 $(PETSYS_DEST):
 	@if [ ! -d "$(PETSYS_DEST)" ]; then \
 		mkdir -p "$(PETSYS_DEST)"; \
@@ -43,7 +43,7 @@ $(PETSYS_DEST):
 	fi
 
 # Copy python scripts - pattern rule
-$(PETSYS_DEST)/%: $(SRC_PETSYS_LIB)/% | $(PETSYS_PY_LIB)
+$(PETSYS_DEST)/%: $(SRC_PETSYS_LIB)/% | $(PETSYS_DEST)
 	cp $< $@
 
 PY_SCRIPTS_DST := $(addprefix $(PETSYS_DEST)/, $(PETSYS_PY_LIB))
@@ -69,15 +69,11 @@ DAQD_SOURCES := \
 DAQD_OUT = $(PETSYS_DEST)/daqd
 
 $(DAQD_OUT):
-	$(CXX) $(CXXFLAGS) -o $@ $(DAQD_SOURCES)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $(DAQD_SOURCES) $(LIBS)
 
 # Compilation rule
 %.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-# Clean rule
-clean:
-	rm -f $(DAQD_OBJECTS) $(TARGET)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
 .PHONY: all venv clean petsys_copy build_shm build_daqd
 
