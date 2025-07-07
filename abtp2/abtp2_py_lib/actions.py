@@ -17,21 +17,23 @@ from . import states
 
 import os
 
-from .petsys_lib import daqd, config
+from .petsys_lib import daqd, config, fe_power
 
 # Define or import your delay constant (ms)
 defaults_abcd_zmq_delay = 100  # replace with actual constant if needed
 defaults_abcd_events_topic = "events_abcd"
+defaults_abcd_status_topic = "status_abcd"
+defaults_abcd_publish_timeout = 10
 
 #******************************************************************************/
 #* Generic actions                                                            */
 #******************************************************************************/
 
 def generic_publish_message(s: status, topic: str, status_message: dict):
-    # Update timestamp and message ID
-    s.last_publication = datetime.now()
+    
+    s.update_timestamp()
     status_message["module"] = "abtp2"
-    status_message["timestamp"] = s.last_publication.isoformat()
+    status_message["timestamp"] = s.last_publication
     status_message["msg_ID"] = s.status_msg_ID
 
     try:
@@ -94,13 +96,61 @@ def generic_create_digitizer(s: status) -> bool:
             debug_level=2,
             card_paths=s.daq_cards
         )
-        logging.info("DAQ daemon started successfully.")
+        if s.verbosity > 0:
+            logging.info("DAQ daemon started successfully.")
     except Exception as e:
         logging.error(f"Failed to start DAQ daemon: {e}")
         return False
 
-    s.connection = daqd.Connection()
-    # s.connection.initializeSystem()
+    try:
+        s.connection = daqd.Connection()
+        if s.verbosity > 0:
+            logging.info("Established connection to DAQ daemon.")
+    except Exception as e:
+        logging.error(f"Failed to connect to DAQ daemon: {e}")
+        return False
+    
+    HowIsDAQD = False
+    try:
+        HowIsDAQD = s.daemon.is_daqd_running()
+        if HowIsDAQD:
+            if s.verbosity > 0:
+                logging.info("DAQ daemon running.")
+        else:
+            logging.error(f"Failed to find the DAQ daemon: HowIsDAQD = {HowIsDAQD}")
+            return False
+    except Exception as e:
+        logging.error(f"Failed to check if DAQ daemon is running: {e}")
+        return False
+
+    try:
+        if (s.abcd_config["portID"] != None and s.abcd_config["slaveID"] != None):
+            for p, s in s.connection.getActiveFEBDs():
+                fe_power.set_fem_power(s.connection,p,s,"off")  
+            s.connection.initializeSystem(power_lst = [(s.abcd_config["portID"], s.abcd_config["slaveID"])])
+        else:
+            s.connection.initializeSystem()
+    except Exception as e:
+        logging.error(f"Failed to initialise system: {e}")
+        return False
+
+    return True
+
+def generic_configure_digitizer(s: status) -> bool:
+
+    if s.verbosity > 0:
+        logging.info("Configuring digitizer")
+
+    try:
+        s.tp2_config.loadToHardware(s.connection, 
+                                    bias_enable=config.APPLY_BIAS_OFF, 
+                                    hw_trigger_enable=s.abcd_config["hwTrigger"], 
+                                    qdc_mode = s.abcd_config["mode"])
+        if s.verbosity > 0:
+            logging.info("Configuration loaded to hardware")
+    except Exception as e:
+        logging.error(f"Error during loading configuration to hardware: {e}")
+        return False
 
     return True
 
@@ -140,11 +190,68 @@ def read_config(s: status):
         logging.error(f"Unexpected error reading config file: {e}")
         return states.PARSE_ERROR
 
-    s.config = new_config
+    s.abcd_config = new_config
+
+    required_keys = {
+        "config",
+        "fileNamePrefix",
+        "time",
+        "mode",
+        "hwTrigger",
+        "enableOnlineProcessing",
+        "outputType",
+        "outputFormat",
+        "writeFraction",
+        "writeMultipleHits",
+        "timeref",
+        "writeRaw",
+        "paramTable",
+        "waitOn",
+        "portID",
+        "slaveID"
+    }
+
+    # Check for missing keys
+    missing_keys = required_keys - s.abcd_config.keys()
+
+    if missing_keys:
+        logging.error("Missing keys in config file:")
+        for key in sorted(missing_keys):
+            logging.error(f" - {key}")
+        return states.PARSE_ERROR
+    else:
+        if s.verbosity > 0:
+            logging.info(f"All expected keys are present in {s.config_file}.")
+    
+    if os.path.isfile(os.path.join(s.working_folder, s.abcd_config["config"])):
+        if s.verbosity > 0:
+            logging.info(f"TOFPET2 config file found: {s.abcd_config['config']}")
+        s.tp2_config_file = os.path.join(s.working_folder, s.abcd_config["config"])
+    else:
+        logging.error(f"TOFPET2 Config file missing")
+        return states.PARSE_ERROR
+    
+    mask = config.LOAD_ALL
+    if s.abcd_config["mode"] != "mixed":
+        mask ^= config.LOAD_QDCMODE_MAP
+
+    # Only for sw_daq_tofpet2 v2025.05.21
+    # if not s.abcd_config["hwTrigger"]:
+    #     mask ^= config.LOAD_FIRMWARE_QDC_CALIBRATION
+
+    try:
+        s.tp2_config = config.ConfigFromFile(s.tp2_config_file, loadMask=mask)
+    except SystemExit as e:
+        if e.code == 1:
+            return states.PARSE_ERROR
+    except Exception as e:
+        logging.error(f"Error reading TOFPET2 config file {s.tp2_config_file}: {e}")
+        return states.PARSE_ERROR
+
     if s.verbosity > 0:
         logging.info(f"Read config\t\t-> OK\t-> CREATE DIGITIZER")
+
     return states.CREATE_DIGITIZER
-    # return states.COMMUNICATION_ERROR
 
 def create_digitizer(s: status):
     
@@ -161,9 +268,9 @@ def create_digitizer(s: status):
     if success:
         if s.verbosity > 0:
             logging.info("Create digitizer\t\t-> OK\t-> CONFIGURE_DIGITIZER")
-        time.sleep(20)
-        # return states.CONFIGURE_DIGITIZER
-        return states.DESTROY_DIGITIZER
+        # time.sleep(20)
+        return states.CONFIGURE_DIGITIZER
+        # return states.DESTROY_DIGITIZER
     else:
         logging.error("Digitizer creation failed")
         return states.CONFIGURE_ERROR
@@ -180,6 +287,124 @@ def destroy_digitizer(s: status):
     generic_destroy_digitizer(s)
 
     return states.CLOSE_SOCKETS
+
+def configure_digitizer(s: status):
+    
+    success = generic_configure_digitizer(s)
+
+    if success:
+        return states.PUBLISH_STATUS
+        # return states.CONFIGURE_ERROR
+    else:
+        return states.CONFIGURE_ERROR
+
+def publish_status(s: status):
+
+    HowIsDAQD = False
+    try:
+        HowIsDAQD = s.daemon.is_daqd_running()
+        if HowIsDAQD:
+            if s.verbosity > 0:
+                logging.info("DAQ daemon running.")
+        else:
+            logging.error(f"Failed to find the DAQ daemon: HowIsDAQD = {HowIsDAQD}")
+            # return states.DIGITIZER_ERROR
+            return states.CONFIGURE_ERROR 
+    except Exception as e:
+        logging.error(f"Failed to check if DAQ daemon is running: {e}")
+        # return states.DIGITIZER_ERROR
+        return states.CONFIGURE_ERROR 
+
+    # Build the status message as a nested dictionary
+    status_message = {
+        "config": json.loads(json.dumps(s.abcd_config)),
+        "acquisition": {
+            "running": False
+        },
+        "digitizer": {
+            "valid_pointer": True,
+            "active": True
+        }
+    }
+
+    # Publish the message using the generic publisher
+    generic_publish_message(
+        s,
+        defaults_abcd_status_topic,
+        status_message
+    )
+
+    return states.RECEIVE_COMMANDS
+
+def receive_commands(s: status):
+
+    commands_socket = s.commands_socket
+
+    try:
+        # Non-blocking receive; adjust flags if needed for blocking or timeout
+        topic, msg_bytes = commands_socket.recv_multipart(flags=zmq.NOBLOCK)
+    except zmq.Again:
+        # No message received
+        msg_bytes = None
+
+    if msg_bytes is not None:
+        size = len(msg_bytes)
+        if s.verbosity > 0:
+            logging.info("Received message; size: {size}")
+
+        try:
+            message_str = msg_bytes.decode("utf-8")
+            if s.verbosity > 0:
+                logging.info("Message buffer: {message_str}")
+
+            json_message = json.loads(message_str)
+        except json.JSONDecodeError as e:
+            logging.error("ERROR: JSON decode error: {e}")
+            json_message = None
+
+        if json_message:
+            command_ID = json_message.get("msg_ID", None)
+            command = json_message.get("command", "")
+            arguments = json_message.get("arguments", None)
+
+            if s.verbosity > 0:
+                logging.info("Command ID: {command_ID}")
+
+            if command == "start":
+                logging.info("### Start acquisition command received ###")
+                return states.START_ACQUISITION
+
+            elif command == "reconfigure" and arguments:
+                new_config = arguments.get("config", None)
+                if new_config:
+                    # Replace global config
+                    s.config = new_config  # Assuming dict or JSON-like
+
+                    # Publish event about reconfiguration
+                    event_msg = {
+                        "type": "event",
+                        "event": "Digitizer reconfiguration",
+                    }
+                    generic_publish_message(s, defaults_abcd_events_topic, event_msg)
+
+                    return states.CONFIGURE_DIGITIZER
+
+            elif command == "off":
+                # return states.CLEAR_MEMORY
+                return states.DESTROY_DIGITIZER
+
+            elif command == "quit":
+                # return states.CLEAR_MEMORY
+                return states.DESTROY_DIGITIZER
+
+    # Check if we need to publish status due to timeout
+    now = time.time()
+    last_pub = s.last_publication
+    if (now - last_pub) > defaults_abcd_publish_timeout:
+        return states.PUBLISH_STATUS
+
+    # Default: keep receiving commands
+    return states.RECEIVE_COMMANDS
 
 #******************************************************************************/
 #* Sockets-specific actions                                                   */
@@ -268,6 +493,24 @@ def bind_sockets(s: status):
 
     return states.READ_CONFIG
 
+def close_sockets(s: status):
+    time.sleep(defaults_abcd_zmq_delay / 1000.0)  # delay in seconds
+
+    def try_close_socket(socket, name):
+        try:
+            socket.close()
+        except zmq.ZMQError as e:
+            logging.error(f"ZeroMQ Error on {name} socket close: {e}")
+
+    try_close_socket(s.status_socket, "status")
+    try_close_socket(s.data_socket, "data")
+    try_close_socket(s.commands_socket, "commands")
+
+    if s.verbosity > 0:
+        logging.info(f"Close sockets\t\t-> OK\t-> DESTROY CONTEXT")
+
+    return states.DESTROY_CONTEXT
+
 #******************************************************************************/
 #* Errors-specific actions                                                    */
 #******************************************************************************/
@@ -313,24 +556,6 @@ def configure_error(s: status):
         logging.info(f"Configure error\t\t-> OK\t-> DESTROY DIGITIZER")
 
     return states.DESTROY_DIGITIZER
-
-def close_sockets(s: status):
-    time.sleep(defaults_abcd_zmq_delay / 1000.0)  # delay in seconds
-
-    def try_close_socket(socket, name):
-        try:
-            socket.close()
-        except zmq.ZMQError as e:
-            logging.error(f"ZeroMQ Error on {name} socket close: {e}")
-
-    try_close_socket(s.status_socket, "status")
-    try_close_socket(s.data_socket, "data")
-    try_close_socket(s.commands_socket, "commands")
-
-    if s.verbosity > 0:
-        logging.info(f"Close sockets\t\t-> OK\t-> DESTROY CONTEXT")
-
-    return states.DESTROY_CONTEXT
 
 def destroy_context(s: status):
     time.sleep(defaults_abcd_zmq_delay / 1000.0)  # delay in seconds

@@ -15,6 +15,7 @@ import logging
 import time
 import sys
 import signal
+import os
 
 import abtp2_py_lib.states as states
 from abtp2_py_lib.typedefs import status
@@ -86,7 +87,11 @@ if __name__ == '__main__':
     global_status.status_address = args.status_address
     global_status.data_address = args.data_address
     global_status.commands_address = args.command_address
+    if not os.path.exists(args.config_file):
+        logging.error(f"Config file does not exists: {args.config_file}")
+        exit(1)
     global_status.config_file = args.config_file
+    global_status.working_folder = os.path.dirname(args.config_file)
     global_status.daq_type = args.daq_type
     global_status.client_socket_name = args.socket_name
 
@@ -119,7 +124,7 @@ if __name__ == '__main__':
     while not stop_execution:
 
         if terminate_flag:
-            current_state = states.CLEAR_MEMORY
+            current_state = states.DESTROY_DIGITIZER
             terminate_flag = False
             time.sleep(1)
 

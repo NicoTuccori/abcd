@@ -31,6 +31,9 @@ class daqd_daemon:
         """
         Launches the C++ daqd daemon and waits for it to listen on the UNIX socket.
         """
+
+        self.daqd_executable = daqd_executable
+
         # Build the command line
         cmd = [
             daqd_executable,
@@ -65,7 +68,7 @@ class daqd_daemon:
 
         # Start threads to read both stdout and stderr
         threading.Thread(target=stream_output, args=(self.proc.stdout, "DAQD - OUT"), daemon=True).start()
-        threading.Thread(target=stream_output, args=(self.proc.stdout, "DAQD - ERROR"), daemon=True).start()
+        threading.Thread(target=stream_output, args=(self.proc.stderr, "DAQD - ERROR"), daemon=True).start()
 
         # Wait for the socket to appear & be connectable
         deadline = time.time() + startup_timeout
@@ -84,6 +87,16 @@ class daqd_daemon:
             # timed out
             self.proc.terminate()
             raise RuntimeError(f"daqd did not start listening on {socket_path}")
+        
+    def get_daqd_pids(self):
+        try:
+            output = subprocess.check_output(['pgrep', '-f', self.daqd_executable], text=True)
+            return [int(pid) for pid in output.strip().split()]
+        except subprocess.CalledProcessError:
+            return []
+
+    def is_daqd_running(self):
+        return bool(self.get_daqd_pids())
 
     def stop(self):
         """
@@ -99,7 +112,10 @@ class daqd_daemon:
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc, tb):
+    def __exit__(self):
+        self.stop()
+
+    def __del__(self):
         self.stop()
 
 @dataclass
@@ -116,6 +132,7 @@ class status:
     status_socket: Any = None
     data_socket: Any = None
     commands_socket: Any = None
+    abcd_config: Any = None
 
     # PETsys defaults
     client_socket_name: str = '/tmp/d.sock'
@@ -126,6 +143,9 @@ class status:
 
     daemon: Optional[daqd_daemon] = None
     connection: Optional[Connection] = None
+    tp2_config_file: Any = None
+    tp2_config: Any = None
+    working_folder: Any = None
 
     retval: int = -1
     client_socket: int = -1
@@ -136,8 +156,6 @@ class status:
     verbosity: int = 0
     status_msg_ID: int = 0
     data_msg_ID: int = 0
-
-    config: Any = None
 
     # Timing
     start_time: float = field(default_factory=lambda: time.time())

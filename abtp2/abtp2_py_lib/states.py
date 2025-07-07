@@ -19,13 +19,13 @@ BIND_SOCKETS =                  state(103, "Bind sockets",                  acti
 READ_CONFIG =                   state(104, "Read configuration",            actions.read_config)
 CREATE_DIGITIZER =              state(105, "Create digitizer",              actions.create_digitizer)
 # RECREATE_DIGITIZER =            state(106, "Recreate digitizer",            actions.recreate_digitizer)
-# CONFIGURE_DIGITIZER =           state(107, "Configure digitizer",           actions.configure_digitizer)
+CONFIGURE_DIGITIZER =           state(107, "Configure digitizer",           actions.configure_digitizer)
 # ALLOCATE_MEMORY =               state(108, "Allocate memory",               actions.allocate_memory)
 # RECONFIGURE_CLEAR_MEMORY =      state(109, "Reconfigure clear memory",      actions.reconfigure_clear_memory)
 # RECONFIGURE_DESTROY_DIGITIZER = state(110, "Reconfigure destroy digitizer", actions.reconfigure_destroy_digitizer)
 
-# RECEIVE_COMMANDS =              state(201, "Receive commands",              actions.receive_commands)
-# PUBLISH_STATUS =                state(202, "Publish status",                actions.publish_status)
+RECEIVE_COMMANDS =              state(201, "Receive commands",              actions.receive_commands)
+PUBLISH_STATUS =                state(202, "Publish status",                actions.publish_status)
 # START_ACQUISITION =             state(203, "Start acquisition",             actions.start_acquisition)
 # STOP_ACQUISITION =              state(204, "Stop acquisition",              actions.stop_acquisition)
 
