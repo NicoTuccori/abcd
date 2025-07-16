@@ -194,18 +194,18 @@ def generic_check_and_load_config(s: status) -> bool:
             logging.info(f"All expected keys are present in {s.abcd_config_file}.")
     
     if os.path.isfile(os.path.join(s.working_folder, s.abcd_config["config"])):
-        if s.verbosity > 0:
-            logging.info(f"TOFPET2 config file found: {s.abcd_config['config']}")
         s.tp2_config_file = os.path.join(s.working_folder, s.abcd_config["config"])
+        if s.verbosity > 0:
+            logging.info(f"TOFPET2 config file found: {s.tp2_config_file}")
     else:
         logging.error(f"TOFPET2 Config file missing")
         return False
     
-    if not os.path.exists(s.working_folder + "bias_settings.tsv"):
+    if not os.path.exists(os.path.join(s.working_folder, "bias_settings.tsv")):
         logging.error(f"Please save bias voltage settings in {s.working_folder} as bias_settings.tsv.")
         return False
 
-    if not os.path.exists(s.working_folder + "disc_settings.tsv"):
+    if not os.path.exists(os.path.join(s.working_folder, "disc_settings.tsv")):
         logging.error(f"Please save threshold settings in {s.working_folder} as disc_settings.tsv.")
         return False
     
@@ -380,7 +380,7 @@ def generic_acquisition_publish_status(s: status, frames, wall_time, data_time, 
 
 def read_config(s: status):
     
-    success = generic_read_configfile(s, s.abcd_config_file)
+    success = generic_read_configfile(s)
 
     if not success:
         logging.error(f"Failed to read configs from file {s.abcd_config_file}")
