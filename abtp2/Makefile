@@ -71,11 +71,17 @@ DAQD_OUT = $(PETSYS_DEST)/daqd
 $(DAQD_OUT):
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $(DAQD_SOURCES) $(LIBS)
 
+WRITERAW_SOURCES := $(SRC_PETSYS_RAW)/write_raw.cpp $(SRC_PETSYS_RAW)/shm_raw.cpp
+WRITERAW_OUT = $(PETSYS_DEST)/write_raw
+
+$(WRITERAW_OUT):
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $(WRITERAW_SOURCES) $(LIBS)
+
 # Compilation rule
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
-.PHONY: all venv clean petsys_copy build_shm build_daqd
+.PHONY: all venv clean petsys_copy build_shm build_daqd build_writeraw
 
 all: venv petsys_copy $(SHM_OUT) $(DAQD_OUT)
 
@@ -99,6 +105,8 @@ venv:
 build_shm: $(SHM_OUT)
 
 build_daqd: $(DAQD_OUT)
+
+build_writeraw: $(WRITERAW_OUT)
 
 clean:
 	rm -rf $(PETSYS_DEST)
