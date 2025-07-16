@@ -56,7 +56,7 @@ if __name__ == '__main__':
                         help='Data PUB socket address')
     parser.add_argument('-C', '--command-address', dest='command_address', default=DEFAULT_COMMAND_ADDR,
                         help='Commands SUB socket address')
-    parser.add_argument('-f', '--config-file', dest='config_file', default=DEFAULT_CONFIG_FILE,
+    parser.add_argument('-f', '--config-file', dest='abcd_config_file', default=DEFAULT_CONFIG_FILE,
                         help='Path to digitizer configuration file')
     parser.add_argument('-s', '--socket-name', dest='socket_name', default=DEFAULT_SOCKET_NAME,
                         help='Underlying DAQ socket name, e.g. /tmp/d.sock')
@@ -87,11 +87,14 @@ if __name__ == '__main__':
     global_status.status_address = args.status_address
     global_status.data_address = args.data_address
     global_status.commands_address = args.command_address
-    if not os.path.exists(args.config_file):
-        logging.error(f"Config file does not exists: {args.config_file}")
+    if not os.path.exists(args.abcd_config_file):
+        logging.error(f"Config file does not exists: {args.abcd_config_file}")
         exit(1)
-    global_status.config_file = args.config_file
-    global_status.working_folder = os.path.dirname(args.config_file)
+    global_status.abcd_config_file = args.abcd_config_file
+    global_status.working_folder = os.path.dirname(args.abcd_config_file)
+    if global_status.working_folder == None:
+        logging.error(f"Please define the config file in an existing working folder. Got {global_status.working_folder}")
+        exit(1)
     global_status.daq_type = args.daq_type
     global_status.client_socket_name = args.socket_name
 
@@ -105,7 +108,7 @@ if __name__ == '__main__':
         logging.info(f"Status address: {global_status.status_address}")
         logging.info(f"Data address: {global_status.data_address}")
         logging.info(f"Command address: {global_status.commands_address}")
-        logging.info(f"Config file: {global_status.config_file}")
+        logging.info(f"Config file: {global_status.abcd_config_file}")
         logging.info(f"Socket name: {global_status.client_socket_name}")
         logging.info(f"DAQ type: {global_status.daq_type}")
         logging.info(f"DAQ cards: {global_status.daq_cards}")
@@ -124,6 +127,14 @@ if __name__ == '__main__':
     while not stop_execution:
 
         if terminate_flag:
+
+            if current_state == states.ACQUISITION_RECEIVE_COMMANDS or current_state == states.POOL_DIGITIZER:
+                current_state = states.STOP_ACQUISITION
+                current_state = current_state.act(global_status)
+                if global_status.verbosity > 0:
+                    logging.info("Acquisition was running. Stopping it.")
+                time.sleep(1)
+                
             current_state = states.DESTROY_DIGITIZER
             terminate_flag = False
             time.sleep(1)

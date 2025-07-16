@@ -17,6 +17,8 @@ import time
 import os
 import socket
 import threading
+import queue
+import logging
 
 # manager of the daqd daemon
 class daqd_daemon:
@@ -53,7 +55,7 @@ class daqd_daemon:
 
         def stream_output(stream, label):
             for line in iter(stream.readline, ''):
-                print(f"[{label}] {line.rstrip()}")
+                logging.info(f"[{label}] {line.rstrip()}")
 
         # Spawn the daemon
         cmd = ['stdbuf', '-oL'] + cmd
@@ -133,6 +135,7 @@ class status:
     data_socket: Any = None
     commands_socket: Any = None
     abcd_config: Any = None
+    abcd_config_file: str = '/home/petsys/abcd/abtp2/configs/Config_example.json'
 
     # PETsys defaults
     client_socket_name: str = '/tmp/d.sock'
@@ -143,6 +146,7 @@ class status:
 
     daemon: Optional[daqd_daemon] = None
     connection: Optional[Connection] = None
+    acquisition_thread: Optional[threading.Thread] = None
     tp2_config_file: Any = None
     tp2_config: Any = None
     working_folder: Any = None
@@ -162,13 +166,6 @@ class status:
     block_start_time: float = 0.0
     stop_time: float = 0.0
     last_publication: float = field(default_factory=lambda: time.time())
-    last_baseline_check: float = field(default_factory=lambda: time.time())
-
-    # User-defined fields
-    events_buffer_max_size: int = 1024
-    config_file: str = '/home/petsys/abcd/abtp2/configs/Config_example.json'
-    device_number: int = 0
-    daq_cards_list: List[str] = field(default_factory=list)
 
     def update_timestamp(self):
         self.last_publication = time.time()

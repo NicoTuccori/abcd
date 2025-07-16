@@ -11,6 +11,7 @@ Python-version of standard ABCD actions
 import zmq, json, time
 from datetime import datetime
 import logging
+import threading
 from .library import send_byte_message, receive_byte_message
 from .typedefs import status, daqd_daemon
 from . import states
@@ -136,61 +137,30 @@ def generic_create_digitizer(s: status) -> bool:
 
     return True
 
-def generic_configure_digitizer(s: status) -> bool:
-
+def generic_read_configfile(s: status) -> bool:
+    
     if s.verbosity > 0:
-        logging.info("Configuring digitizer")
+        logging.info(f"Reading config file: {s.abcd_config_file}")
 
     try:
-        s.tp2_config.loadToHardware(s.connection, 
-                                    bias_enable=config.APPLY_BIAS_OFF, 
-                                    hw_trigger_enable=s.abcd_config["hwTrigger"], 
-                                    qdc_mode = s.abcd_config["mode"])
-        if s.verbosity > 0:
-            logging.info("Configuration loaded to hardware")
-    except Exception as e:
-        logging.error(f"Error during loading configuration to hardware: {e}")
-        return False
-
-    return True
-
-def generic_destroy_digitizer(s: status) -> None:
-
-    if s.verbosity > 0:
-        logging.info("Destroying digitizer")
-        logging.info("Shutting down DAQ daemon")
-    try:
-        s.daemon.stop()
-    except Exception as e:
-        logging.error(f"Error during shutdown: {e}")
-
-    # TO DO
-
-#******************************************************************************/
-#* Digitizer-specific actions                                                   */
-#******************************************************************************/
-
-def read_config(s: status):
-    config_file_name = s.config_file
-
-    if s.verbosity > 0:
-        logging.info(f"Reading config file: {config_file_name}")
-
-    try:
-        with open(config_file_name, 'r') as f:
+        with open(s.abcd_config_file, 'r') as f:
             new_config = json.load(f)
     except json.JSONDecodeError as e:
         logging.error(f"Parse error while reading config file: {e.msg} "
               f"(line: {e.lineno}, column: {e.colno})")
-        return states.PARSE_ERROR
+        return False
     except FileNotFoundError:
-        logging.error(f"Config file not found: {config_file_name}")
-        return states.PARSE_ERROR
+        logging.error(f"Config file not found: {s.abcd_config_file}")
+        return False
     except Exception as e:
         logging.error(f"Unexpected error reading config file: {e}")
-        return states.PARSE_ERROR
+        return False
 
     s.abcd_config = new_config
+
+    return True
+
+def generic_check_and_load_config(s: status) -> bool:
 
     required_keys = {
         "config",
@@ -218,10 +188,10 @@ def read_config(s: status):
         logging.error("Missing keys in config file:")
         for key in sorted(missing_keys):
             logging.error(f" - {key}")
-        return states.PARSE_ERROR
+        return False
     else:
         if s.verbosity > 0:
-            logging.info(f"All expected keys are present in {s.config_file}.")
+            logging.info(f"All expected keys are present in {s.abcd_config_file}.")
     
     if os.path.isfile(os.path.join(s.working_folder, s.abcd_config["config"])):
         if s.verbosity > 0:
@@ -229,7 +199,15 @@ def read_config(s: status):
         s.tp2_config_file = os.path.join(s.working_folder, s.abcd_config["config"])
     else:
         logging.error(f"TOFPET2 Config file missing")
-        return states.PARSE_ERROR
+        return False
+    
+    if not os.path.exists(s.working_folder + "bias_settings.tsv"):
+        logging.error(f"Please save bias voltage settings in {s.working_folder} as bias_settings.tsv.")
+        return False
+
+    if not os.path.exists(s.working_folder + "disc_settings.tsv"):
+        logging.error(f"Please save threshold settings in {s.working_folder} as disc_settings.tsv.")
+        return False
     
     mask = config.LOAD_ALL
     if s.abcd_config["mode"] != "mixed":
@@ -243,9 +221,175 @@ def read_config(s: status):
         s.tp2_config = config.ConfigFromFile(s.tp2_config_file, loadMask=mask)
     except SystemExit as e:
         if e.code == 1:
-            return states.PARSE_ERROR
+            return False
     except Exception as e:
         logging.error(f"Error reading TOFPET2 config file {s.tp2_config_file}: {e}")
+        return False
+    
+    return True
+
+def generic_configure_digitizer(s: status) -> bool:
+
+    if s.verbosity > 0:
+        logging.info("Configuring digitizer")
+
+    try:
+        s.tp2_config.loadToHardware(s.connection, 
+                                    bias_enable=config.APPLY_BIAS_OFF, 
+                                    hw_trigger_enable=s.abcd_config["hwTrigger"], 
+                                    qdc_mode = s.abcd_config["mode"])
+        if s.verbosity > 0:
+            logging.info("Configuration loaded to hardware")
+    except Exception as e:
+        logging.error(f"Error during loading configuration to hardware: {e}")
+        return False
+
+    return True
+
+def generic_destroy_digitizer(s: status) -> None:
+
+    if s.verbosity > 0:
+        logging.info("Destroying digitizer")
+        logging.info("Shutting down DAQ daemon")
+
+    try:
+        for portID, slaveID in s.connection.getActiveFEBDs(): 
+            fe_power.set_bias_power(s.connection, portID, slaveID, "off")
+            fe_power.set_fem_power(s.connection, portID, slaveID, "off")
+        if s.verbosity > 0:
+            logging.info("SiPM bias OFF & FEM OFF")
+    except:
+        logging.error(f"Error while turning SiPM and FEM OFF. ATTENTION!")
+
+    try:
+        s.daemon.stop()
+    except Exception as e:
+        logging.error(f"Error during shutdown: {e}")
+
+    # TO DO
+
+def generic_stop_acquisition(s: status) -> None:
+
+    if s.verbosity > 0:
+        logging.info(f"#### Stopping acquisition!!!")
+    try:
+        for portID, slaveID in s.connection.getActiveFEBDs(): 
+            fe_power.set_bias_power(s.connection, portID, slaveID, "off")
+        if s.verbosity > 0:
+            logging.info("SiPM bias OFF")
+    except Exception as e:
+        logging.error(f"Error during turning SiPM bias off: {e}. ATTENTION!")
+
+    try:
+        s.connection.stopAcquisition()
+    except Exception as e:
+        logging.error(f"Error during stop acquisition: {e}")
+
+    # Record stop time and compute duration
+    stop_time = datetime.now()
+    delta_time = int((stop_time - s.start_time).total_seconds())
+
+    s.stop_time = stop_time
+
+    if s.verbosity > 0:
+        print(f"Run time: {delta_time}")
+
+def generic_acquisition_thread(s: status) -> None:
+
+    def _make_progress_cb(s):
+        # throttle + dedup
+        last_frames    = -1        # force first publish
+        last_pub_wall  = -1.0
+        min_interval   = getattr(s, "status_pub_interval", 1.0)  # seconds
+
+        def progress_cb(frames, wall_time, data_time, nEvents, nFramesLost):
+            nonlocal last_frames, last_pub_wall
+
+            # guard: frames must advance
+            if frames <= last_frames:
+                return
+
+            # guard: time throttle
+            if last_pub_wall >= 0 and (wall_time - last_pub_wall) < min_interval:
+                return
+
+            last_frames   = frames
+            last_pub_wall = wall_time
+
+            generic_acquisition_publish_status(s, frames, wall_time, data_time, nEvents, nFramesLost)
+
+        return progress_cb
+
+    s.connection.acquire(
+        s.abcd_config["time"],
+        0,
+        0,
+        progress_callback=_make_progress_cb(s)
+    )
+
+def generic_acquisition_publish_status(s: status, frames, wall_time, data_time, nEvents, nFramesLost) -> None:
+    
+    status_message = {}
+
+    status_message["config"] = s.abcd_config
+
+    status_message["digitizer"] = {}
+    status_message["acquisition"] = {}
+
+    HowIsDAQD = False
+    HowIsDAQD = s.daemon.is_daqd_running()
+
+    if not HowIsDAQD:
+        
+        logging.error(f"Failed to find the DAQ daemon: HowIsDAQD = {HowIsDAQD}")
+        status_message["digitizer"]["valid_pointer"] = False
+        status_message["acquisition"]["running"] = False
+
+    else:
+
+        status_message["digitizer"]["valid_pointer"] = True
+        status_message["digitizer"]["active"] = HowIsDAQD
+        status_message["acquisition"]["running"] = True
+
+        now = time.time()
+        runtime = int(now - s.start_time) if hasattr(s, "start_time") else 0
+        status_message["acquisition"]["runtime"] = runtime
+
+        # Calculate elapsed time since last publication
+        pub_delta = (now - s.last_publication) if hasattr(s, "last_publication") else None
+        pubtime = pub_delta if pub_delta and pub_delta > 0 else 1e-3  # avoid division by zero
+
+        # Fill in acquisition progress from callback arguments
+        status_message["acquisition"]["frames"] = frames
+        status_message["acquisition"]["events"] = nEvents
+        status_message["acquisition"]["frames_lost"] = nFramesLost
+        status_message["acquisition"]["wall_time"] = wall_time
+        status_message["acquisition"]["data_time"] = data_time
+        status_message["acquisition"]["delay"] = (wall_time - data_time) if (wall_time is not None and data_time is not None) else None
+
+    # Debugging
+    if s.verbosity > 0:
+        logging.debug(f"Publishing status message: {status_message}")
+
+    # Publish the message over ZMQ or your messaging system
+    generic_publish_message(s, defaults_abcd_status_topic, status_message)
+
+#******************************************************************************/
+#* Digitizer-specific actions                                                   */
+#******************************************************************************/
+
+def read_config(s: status):
+    
+    success = generic_read_configfile(s, s.abcd_config_file)
+
+    if not success:
+        logging.error(f"Failed to read configs from file {s.abcd_config_file}")
+        return states.PARSE_ERROR
+    
+    success = generic_check_and_load_config(s)
+
+    if not success:
+        logging.error("Failed to check and load config")
         return states.PARSE_ERROR
 
     if s.verbosity > 0:
@@ -270,10 +414,9 @@ def create_digitizer(s: status):
             logging.info("Create digitizer\t\t-> OK\t-> CONFIGURE_DIGITIZER")
         # time.sleep(20)
         return states.CONFIGURE_DIGITIZER
-        # return states.DESTROY_DIGITIZER
     else:
         logging.error("Digitizer creation failed")
-        return states.CONFIGURE_ERROR
+        return states.DIGITIZER_ERROR
     
 def destroy_digitizer(s: status):
 
@@ -294,11 +437,17 @@ def configure_digitizer(s: status):
 
     if success:
         return states.PUBLISH_STATUS
-        # return states.CONFIGURE_ERROR
     else:
         return states.CONFIGURE_ERROR
 
 def publish_status(s: status):
+
+    status_message = {
+        "config": json.loads(json.dumps(s.abcd_config)),
+        "acquisition": {
+            "running": False
+        }
+    }
 
     HowIsDAQD = False
     try:
@@ -306,26 +455,15 @@ def publish_status(s: status):
         if HowIsDAQD:
             if s.verbosity > 0:
                 logging.info("DAQ daemon running.")
+            status_message["digitizer"]["valid_pointer"] = True
+            status_message["digitizer"]["active"] = True
         else:
             logging.error(f"Failed to find the DAQ daemon: HowIsDAQD = {HowIsDAQD}")
-            # return states.DIGITIZER_ERROR
-            return states.CONFIGURE_ERROR 
+            status_message["digitizer"]["valid_pointer"] = False
     except Exception as e:
         logging.error(f"Failed to check if DAQ daemon is running: {e}")
         # return states.DIGITIZER_ERROR
         return states.CONFIGURE_ERROR 
-
-    # Build the status message as a nested dictionary
-    status_message = {
-        "config": json.loads(json.dumps(s.abcd_config)),
-        "acquisition": {
-            "running": False
-        },
-        "digitizer": {
-            "valid_pointer": True,
-            "active": True
-        }
-    }
 
     # Publish the message using the generic publisher
     generic_publish_message(
@@ -334,7 +472,13 @@ def publish_status(s: status):
         status_message
     )
 
-    return states.RECEIVE_COMMANDS
+    if not HowIsDAQD:
+        # return states.DIGITIZER_ERROR
+        return states.CONFIGURE_ERROR 
+    else:
+        if s.verbosity > 0:
+            logging.info("Publish status\t\t-> OK\t-> RECEIVE_COMMANDS")
+        return states.RECEIVE_COMMANDS
 
 def receive_commands(s: status):
 
@@ -371,14 +515,19 @@ def receive_commands(s: status):
                 logging.info("Command ID: {command_ID}")
 
             if command == "start":
-                logging.info("### Start acquisition command received ###")
+                logging.info("################################################################### Start!!! ###")
                 return states.START_ACQUISITION
 
             elif command == "reconfigure" and arguments:
                 new_config = arguments.get("config", None)
                 if new_config:
                     # Replace global config
-                    s.config = new_config  # Assuming dict or JSON-like
+                    s.abcd_config = new_config  # Assuming dict or JSON-like
+
+                    success = generic_check_and_load_config(s)
+                    if not success:
+                        logging.error("New config not valid")
+                        return states.RECEIVE_COMMANDS
 
                     # Publish event about reconfiguration
                     event_msg = {
@@ -388,6 +537,9 @@ def receive_commands(s: status):
                     generic_publish_message(s, defaults_abcd_events_topic, event_msg)
 
                     return states.CONFIGURE_DIGITIZER
+                else:
+                    logging.error("Reconfigure command received, but no config provided")
+                    return states.RECEIVE_COMMANDS
 
             elif command == "off":
                 # return states.CLEAR_MEMORY
@@ -404,6 +556,147 @@ def receive_commands(s: status):
         return states.PUBLISH_STATUS
 
     # Default: keep receiving commands
+    return states.RECEIVE_COMMANDS
+
+def start_acquisition(s: status):
+
+    json_event_message = {
+        "type": "event",
+        "event": "Start acquisition"
+    }
+
+    generic_publish_message(s, defaults_abcd_events_topic, json_event_message)
+
+    HowIsDAQD = False
+    try:
+        HowIsDAQD = s.daemon.is_daqd_running()
+        if HowIsDAQD:
+            if s.verbosity > 0:
+                logging.info("DAQ daemon running.")
+        else:
+            logging.error(f"Failed to find the DAQ daemon: HowIsDAQD = {HowIsDAQD}")
+            return states.DIGITIZER_ERROR
+    except Exception as e:
+        logging.error(f"Failed to check if DAQ daemon is running: {e}")
+        return states.DIGITIZER_ERROR
+    
+    try:
+        for portID, slaveID in s.connection.getActiveFEBDs(): 
+            fe_power.set_bias_power(s.connection, portID, slaveID, "on")
+        if s.verbosity > 0:
+            logging.info("SiPM bias ON")
+    except:
+        logging.error(f"Error during turning SiPM bias on")
+        return states.DIGITIZER_ERROR
+    
+    try:
+        s.connection.openRawAcquisition(s.abcd_config["fileNamePrefix"])
+    except:
+        logging.error(f"Error during opening raw acquisition")
+        return states.ACQUISITION_ERROR
+    
+    try:
+        activeAsics = s.connection.getActiveAsics()
+        activeChannels = [ (portID, slaveID, chipID, channelID) for channelID in range(64) for portID, slaveID, chipID in activeAsics ]
+
+        asicsConfig = s.connection.getAsicsConfig()
+    except:
+        logging.error(f"Error retrieving active channels and asics configuration")
+        return states.ACQUISITION_ERROR
+
+    if getattr(s, "acquisition_thread", None) and s.acquisition_thread.is_alive():
+        logging.error("Acquisition thread is already running")
+        return states.ACQUISITION_RECEIVE_COMMANDS
+    
+    if s.abcd_config["paramTable"] is None:
+        try:
+            s.acquisition_thread = threading.Thread(
+                target=generic_acquisition_thread,
+                args=(s,),
+                daemon=True
+            )
+            s.acquisition_thread.start()
+        except Exception as e:
+            logging.error(f"Start of acquisition thread failed: {e}")
+            return states.ACQUISITION_ERROR
+    else:
+        # TO DO FOR PARAM SCANS
+        True
+
+    s.start_time = time.time()
+    
+    return states.ACQUISITION_RECEIVE_COMMANDS
+
+def acquisition_receive_commands(s: status):
+
+    commands_socket = s.commands_socket
+
+    try:
+        # Non-blocking receive; adjust flags if needed for blocking or timeout
+        topic, msg_bytes = commands_socket.recv_multipart(flags=zmq.NOBLOCK)
+    except zmq.Again:
+        # No message received
+        msg_bytes = None
+
+    if msg_bytes is not None:
+        size = len(msg_bytes)
+        if s.verbosity > 0:
+            logging.info("Received message; size: {size}")
+
+        try:
+            message_str = msg_bytes.decode("utf-8")
+            if s.verbosity > 0:
+                logging.info("Message buffer: {message_str}")
+
+            json_message = json.loads(message_str)
+        except json.JSONDecodeError as e:
+            logging.error("ERROR: JSON decode error: {e}")
+            json_message = None
+
+        if json_message:
+            command_ID = json_message.get("msg_ID", None)
+            command = json_message.get("command", "")
+            arguments = json_message.get("arguments", None)
+
+            if s.verbosity > 0:
+                logging.info("Command ID: {command_ID}")
+
+            if command == "stop":
+                logging.info("################################################################### Stop!!! ###")
+                return states.STOP_ACQUISITION
+            else:
+                logging.error(f"Recevied command: {command}. It is either unknown or not allowed during acquisition.")
+
+    return states.POOL_DIGITIZER
+
+def pool_digitizer(s: status):
+
+    thread = getattr(s, "acquisition_thread", None)
+
+    if thread and thread.is_alive():
+        return states.ACQUISITION_RECEIVE_COMMANDS
+    
+    else:
+        if s.verbosity > 0:
+            logging.info("The acquisition is finished. Stopping...")
+        return states.STOP_ACQUISITION
+    
+def stop_acquisition(s: status):
+
+    generic_stop_acquisition(s)
+
+    # Compute duration in seconds
+    delta_time = int((s.stop_time - s.start_time).total_seconds())
+    event_message = f"Stop acquisition (duration: {delta_time} s)"
+
+    # Create event JSON and publish
+    event_json = {
+        "type": "event",
+        "event": event_message
+    }
+
+    generic_publish_message(s, defaults_abcd_events_topic, event_json)
+
     return states.RECEIVE_COMMANDS
 
 #******************************************************************************/
@@ -554,6 +847,50 @@ def configure_error(s: status):
 
     if s.verbosity > 0:
         logging.info(f"Configure error\t\t-> OK\t-> DESTROY DIGITIZER")
+
+    return states.DESTROY_DIGITIZER
+
+def digitizer_error(s: status):
+    
+    json_event_message = {
+        "type": "error",
+        "error": "Digitizer error"
+    }
+
+    generic_publish_message(s, defaults_abcd_events_topic, json_event_message)
+
+    try:
+        for portID, slaveID in s.connection.getActiveFEBDs(): 
+            fe_power.set_bias_power(s.connection, portID, slaveID, "off")
+        if s.verbosity > 0:
+            logging.info("SiPM bias OFF")
+    except:
+        logging.error(f"Error during turning SiPM bias off. ATTENTION!")
+
+    if s.verbosity > 0:
+        logging.info(f"Digitizer error\t\t-> OK\t-> DESTROY DIGITIZER")
+
+    return states.DESTROY_DIGITIZER
+
+def acquisition_error(s: status):
+    
+    json_event_message = {
+        "type": "error",
+        "error": "Acquisition error"
+    }
+
+    generic_publish_message(s, defaults_abcd_events_topic, json_event_message)
+
+    try:
+        for portID, slaveID in s.connection.getActiveFEBDs(): 
+            fe_power.set_bias_power(s.connection, portID, slaveID, "off")
+        if s.verbosity > 0:
+            logging.info("SiPM bias OFF")
+    except:
+        logging.error(f"Error during turning SiPM bias off. ATTENTION!")
+
+    if s.verbosity > 0:
+        logging.info(f"Acquisition error\t\t-> OK\t-> DESTROY DIGITIZER")
 
     return states.DESTROY_DIGITIZER
 

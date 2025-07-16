@@ -26,10 +26,11 @@ CONFIGURE_DIGITIZER =           state(107, "Configure digitizer",           acti
 
 RECEIVE_COMMANDS =              state(201, "Receive commands",              actions.receive_commands)
 PUBLISH_STATUS =                state(202, "Publish status",                actions.publish_status)
-# START_ACQUISITION =             state(203, "Start acquisition",             actions.start_acquisition)
-# STOP_ACQUISITION =              state(204, "Stop acquisition",              actions.stop_acquisition)
+START_ACQUISITION =             state(203, "Start acquisition",             actions.start_acquisition)
+STOP_ACQUISITION =              state(204, "Stop acquisition",              actions.stop_acquisition)
 
-# ACQUISITION_RECEIVE_COMMANDS =  state(301, "Acquisition receive commands",  actions.acquisition_receive_commands)
+ACQUISITION_RECEIVE_COMMANDS =  state(301, "Acquisition receive commands",  actions.acquisition_receive_commands)
+POOL_DIGITIZER =                state(302, "Poll digitizer thread",         actions.pool_digitizer)
 # ADD_TO_BUFFER =                 state(303, "Read and add to events buffer", actions.add_to_buffer)
 # PUBLISH_EVENTS =                state(304, "Publish events",                actions.publish_events)
 # ACQUISITION_PUBLISH_STATUS =    state(305, "Acquisition publish status",    actions.acquisition_publish_status)
@@ -54,27 +55,27 @@ STOP =                          state(899, "Stop",                          acti
 
 COMMUNICATION_ERROR =           state(901, "Communication error",           actions.communication_error)
 PARSE_ERROR =                   state(902, "Config parse error",            actions.parse_error)
-# DIGITIZER_ERROR =               state(903, "Digitizer error",               actions.digitizer_error)
+DIGITIZER_ERROR =               state(903, "Digitizer error",               actions.digitizer_error)
 CONFIGURE_ERROR =               state(904, "Configure error",               actions.configure_error)
-# ACQUISITION_ERROR =             state(905, "Acquisition error",             actions.acquisition_error)
+ACQUISITION_ERROR =             state(905, "Acquisition error",             actions.acquisition_error)
 # RESTART_CONFIGURE_ERROR =       state(906, "Restart configure error",       actions.restart_configure_error)
 
 # List of all states
 states = [
     START, CREATE_CONTEXT, CREATE_SOCKETS, BIND_SOCKETS, READ_CONFIG,
-    CREATE_DIGITIZER, 
-    # RECREATE_DIGITIZER, CONFIGURE_DIGITIZER, ALLOCATE_MEMORY,
+    CREATE_DIGITIZER, CONFIGURE_DIGITIZER,
+    # RECREATE_DIGITIZER, ALLOCATE_MEMORY,
     # RECONFIGURE_CLEAR_MEMORY, RECONFIGURE_DESTROY_DIGITIZER,
-    # RECEIVE_COMMANDS, PUBLISH_STATUS, START_ACQUISITION, STOP_ACQUISITION,
-    # ACQUISITION_RECEIVE_COMMANDS, ADD_TO_BUFFER, PUBLISH_EVENTS,
+    RECEIVE_COMMANDS, PUBLISH_STATUS, START_ACQUISITION, STOP_ACQUISITION,
+    ACQUISITION_RECEIVE_COMMANDS, POOL_DIGITIZER, 
     # ACQUISITION_PUBLISH_STATUS, STOP_PUBLISH_EVENTS, CONTINUE_ACQUISITION,
     # TRIGGER_RECONFIGURATION, RESTART_PUBLISH_EVENTS, RESTART_STOP_ACQUISITION,
     # RESTART_CLEAR_MEMORY, RESTART_DESTROY_DIGITIZER, RESTART_CREATE_DIGITIZER,
     # RESTART_CONFIGURE_DIGITIZER, RESTART_ALLOCATE_MEMORY,
     # CLEAR_MEMORY, 
     DESTROY_DIGITIZER, CLOSE_SOCKETS, DESTROY_CONTEXT, STOP, COMMUNICATION_ERROR, PARSE_ERROR,
-    CONFIGURE_ERROR
-    # DIGITIZER_ERROR, ACQUISITION_ERROR, RESTART_CONFIGURE_ERROR
+    CONFIGURE_ERROR, DIGITIZER_ERROR, ACQUISITION_ERROR, 
+    # RESTART_CONFIGURE_ERROR
 ]
 
 # Helper to lookup state by ID
