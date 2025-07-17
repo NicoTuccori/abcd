@@ -18,6 +18,7 @@ import os
 import socket
 import threading
 import logging
+import pathlib
 
 # manager of the daqd daemon
 class daqd_daemon:
@@ -32,7 +33,7 @@ class daqd_daemon:
         """
         Launches the C++ daqd daemon and waits for it to listen on the UNIX socket.
         """
-
+        
         self.daqd_executable = daqd_executable
 
         # Build the command line

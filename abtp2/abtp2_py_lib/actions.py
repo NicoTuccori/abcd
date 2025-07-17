@@ -39,23 +39,19 @@ def generic_publish_message(s: status, topic: str, status_message: dict):
     status_message["timestamp"] = s.last_publication
     status_message["msg_ID"] = s.status_msg_ID
 
-    try:
-        output_buffer = json.dumps(status_message, separators=(",", ":")).encode('utf-8')
-    except (TypeError, ValueError) as e:
-        logging.error(f"Unable to encode status message to JSON: {e}")
-        return
+    message = json.dumps(status_message, separators=(",", ":"))
 
-    total_size = len(output_buffer)
-    topic_with_suffix = f"{topic}_v0_s{total_size}".encode('utf-8')
+    total_size = len(message)
+    topic = f"{topic}_v0_s{total_size}"
 
     if s.verbosity > 0:
-        logging.info(f"Sending status message; Topic: {topic_with_suffix.decode()}; "
-                     f"Size: {total_size}; Message: {output_buffer.decode(errors='replace')}")
+        logging.info(f"Sending status message; Topic: {topic}; "
+                     f"Size: {total_size}; Message: {message}")
 
     success = send_byte_message(
         socket=s.status_socket,
-        topic=topic_with_suffix,
-        buffer=output_buffer,
+        topic=topic,
+        buffer_bytes=message.encode("utf-8"),
         verbosity=s.verbosity
     )
 
@@ -235,6 +231,7 @@ def generic_configure_digitizer(s: status) -> bool:
             s.connection.initializeSystem(power_lst = [(s.abcd_config["portID"], s.abcd_config["slaveID"])])
         else:
             s.connection.initializeSystem()
+        time.sleep(1)
     except Exception as e:
         logging.error(f"Failed to initialise system: {e}")
         return False
@@ -249,6 +246,7 @@ def generic_configure_digitizer(s: status) -> bool:
                                     qdc_mode = s.abcd_config["mode"])
         if s.verbosity > 0:
             logging.info("Configuration loaded to hardware")
+        time.sleep(1)
     except Exception as e:
         logging.error(f"Error during loading configuration to hardware: {e}")
         return False
@@ -292,17 +290,19 @@ def generic_stop_acquisition(s: status) -> None:
                 time.sleep(0.01)
         if s.verbosity > 0:
             logging.info("SiPM bias OFF")
+        time.sleep(1)
     except Exception as e:
         logging.error(f"Error during turning SiPM bias off: {e}. ATTENTION!")
 
     try:
         s.connection.stopAcquisition()
+        time.sleep(1)
     except Exception as e:
         logging.error(f"Error during stop acquisition: {e}")
 
     # Record stop time and compute duration
-    stop_time = datetime.now()
-    delta_time = int((stop_time - s.start_time).total_seconds())
+    stop_time = time.time()
+    delta_time = int(stop_time - s.start_time)
 
     s.stop_time = stop_time
 
@@ -505,7 +505,7 @@ def receive_commands(s: status):
 
     try:
         json_message = receive_json_message_no_topic(commands_socket,verbosity=s.verbosity)
-        if s.verbosity > 0:
+        if s.verbosity > 0 and json_message:
             logging.info(f"Received message: {json_message}")
     except Exception as e:
         logging.error(f"Failed to receive commands: {e}")
@@ -598,11 +598,11 @@ def start_acquisition(s: status):
         logging.error(f"Error during turning SiPM bias on")
         return states.DIGITIZER_ERROR
     
-    try:
-        s.connection.openRawAcquisition(s.abcd_config["fileNamePrefix"])
-    except:
-        logging.error(f"Error during opening raw acquisition")
-        return states.ACQUISITION_ERROR
+    # try:
+    s.connection.openRawAcquisition(s.abcd_config["fileNamePrefix"])
+    # except:
+    #     logging.error(f"Error during opening raw acquisition. Check {s.abcd_config['fileNamePrefix']}")
+    #     return states.DIGITIZER_ERROR
     
     try:
         activeAsics = s.connection.getActiveAsics()
@@ -695,7 +695,7 @@ def stop_acquisition(s: status):
     generic_stop_acquisition(s)
 
     # Compute duration in seconds
-    delta_time = int((s.stop_time - s.start_time).total_seconds())
+    delta_time = int((s.stop_time - s.start_time))
     event_message = f"Stop acquisition (duration: {delta_time} s)"
 
     # Create event JSON and publish

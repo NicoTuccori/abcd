@@ -83,7 +83,7 @@ $(WRITERAW_OUT):
 
 .PHONY: all venv clean petsys_copy build_shm build_daqd build_writeraw
 
-all: venv petsys_copy $(SHM_OUT) $(DAQD_OUT)
+all: venv petsys_copy $(SHM_OUT) $(DAQD_OUT) $(WRITERAW_OUT)
 
 petsys_copy: $(PY_SCRIPTS_DST)
 

@@ -43,7 +43,7 @@ def send_byte_message(socket: zmq.Socket,
     try:
         payload = bytes(buffer_bytes)  # safe copy / conversion
     except Exception as e:
-        logging.info(f"Error converting payload to bytes: {e}", file=sys.stderr)
+        logging.error(f"Error converting payload to bytes: {e}")
         return False
     
     topic_bytes = topic_with_space.encode("utf-8")
@@ -58,12 +58,11 @@ def send_byte_message(socket: zmq.Socket,
         #pyzmq's send() returns None on success; will raise ZMQError on failure.
         socket.send(frame, flags=0)
     except zmq.ZMQError as e:
-        logging.error(f"ZeroMQ Error on send: {e}", file=sys.stderr)
+        logging.error(f"ZeroMQ Error on send: {e}")
         return False
 
     return True
     
-
 def receive_byte_message(socket: zmq.Socket, extract_topic: bool = True, verbosity: int = 0):
     """
     Non-blocking receive of a raw byte message from a ZeroMQ socket.
@@ -82,7 +81,7 @@ def receive_byte_message(socket: zmq.Socket, extract_topic: bool = True, verbosi
         # No message available
         return b""
     except zmq.ZMQError as e:
-        logging.error(f"ZeroMQ Error on receive: {e}", file=sys.stderr)
+        logging.error(f"ZeroMQ Error on receive: {e}")
         return b""
 
     if verbosity > 0:
@@ -108,14 +107,14 @@ def receive_json_message_no_topic(socket, verbosity=0):
         # No message available
         return {}
     except zmq.ZMQError as e:
-        logging.error(f"ZeroMQ Error on receive: {e}", file=sys.stderr)
+        logging.error(f"ZeroMQ Error on receive: {e}")
         return {}
 
     # Decode as UTF-8 text (C++ code assumes char* -> string)
     try:
         message = raw.decode("utf-8", errors="replace")
     except Exception as e:
-        logging.error(f"Error decoding message bytes: {e}", file=sys.stderr)
+        logging.error(f"Error decoding message bytes: {e}")
         return {}
 
     if verbosity > 0:
@@ -126,7 +125,7 @@ def receive_json_message_no_topic(socket, verbosity=0):
     try:
         json_message = json.loads(message)
     except json.JSONDecodeError as e:
-        logging.error(f"JSON parsing error: {e}", file=sys.stderr)
+        logging.error(f"JSON parsing error: {e}")
         return {}
 
     return json_message
