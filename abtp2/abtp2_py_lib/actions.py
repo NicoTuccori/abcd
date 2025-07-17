@@ -12,7 +12,8 @@ import zmq, json, time
 from datetime import datetime
 import logging
 import threading
-from .library import send_byte_message, receive_byte_message
+import copy
+from .library import send_byte_message, receive_json_message_no_topic
 from .typedefs import status, daqd_daemon
 from . import states
 
@@ -99,6 +100,7 @@ def generic_create_digitizer(s: status) -> bool:
         )
         if s.verbosity > 0:
             logging.info("DAQ daemon started successfully.")
+        time.sleep(5)
     except Exception as e:
         logging.error(f"Failed to start DAQ daemon: {e}")
         return False
@@ -107,6 +109,7 @@ def generic_create_digitizer(s: status) -> bool:
         s.connection = daqd.Connection()
         if s.verbosity > 0:
             logging.info("Established connection to DAQ daemon.")
+        time.sleep(5)
     except Exception as e:
         logging.error(f"Failed to connect to DAQ daemon: {e}")
         return False
@@ -122,17 +125,6 @@ def generic_create_digitizer(s: status) -> bool:
             return False
     except Exception as e:
         logging.error(f"Failed to check if DAQ daemon is running: {e}")
-        return False
-
-    try:
-        if (s.abcd_config["portID"] != None and s.abcd_config["slaveID"] != None):
-            for p, s in s.connection.getActiveFEBDs():
-                fe_power.set_fem_power(s.connection,p,s,"off")  
-            s.connection.initializeSystem(power_lst = [(s.abcd_config["portID"], s.abcd_config["slaveID"])])
-        else:
-            s.connection.initializeSystem()
-    except Exception as e:
-        logging.error(f"Failed to initialise system: {e}")
         return False
 
     return True
@@ -191,7 +183,7 @@ def generic_check_and_load_config(s: status) -> bool:
         return False
     else:
         if s.verbosity > 0:
-            logging.info(f"All expected keys are present in {s.abcd_config_file}.")
+            logging.info(f"All expected keys are present.")
     
     if os.path.isfile(os.path.join(s.working_folder, s.abcd_config["config"])):
         s.tp2_config_file = os.path.join(s.working_folder, s.abcd_config["config"])
@@ -229,6 +221,20 @@ def generic_check_and_load_config(s: status) -> bool:
     return True
 
 def generic_configure_digitizer(s: status) -> bool:
+
+    if s.verbosity > 0:
+        logging.info("Initialising digitizer")
+
+    try:
+        if (s.abcd_config["portID"] != None and s.abcd_config["slaveID"] != None):
+            for p, s in s.connection.getActiveFEBDs():
+                fe_power.set_fem_power(s.connection,p,s,"off")  
+            s.connection.initializeSystem(power_lst = [(s.abcd_config["portID"], s.abcd_config["slaveID"])])
+        else:
+            s.connection.initializeSystem()
+    except Exception as e:
+        logging.error(f"Failed to initialise system: {e}")
+        return False
 
     if s.verbosity > 0:
         logging.info("Configuring digitizer")
@@ -385,12 +391,6 @@ def read_config(s: status):
     if not success:
         logging.error(f"Failed to read configs from file {s.abcd_config_file}")
         return states.PARSE_ERROR
-    
-    success = generic_check_and_load_config(s)
-
-    if not success:
-        logging.error("Failed to check and load config")
-        return states.PARSE_ERROR
 
     if s.verbosity > 0:
         logging.info(f"Read config\t\t-> OK\t-> CREATE DIGITIZER")
@@ -433,11 +433,20 @@ def destroy_digitizer(s: status):
 
 def configure_digitizer(s: status):
     
+    success = generic_check_and_load_config(s)
+
+    if not success:
+        logging.error("Failed to check and load config")
+        return states.CONFIGURE_ERROR
+
     success = generic_configure_digitizer(s)
 
     if success:
+        if s.verbosity > 0:
+            logging.info("Configure digitizer\t-> OK\t-> PUBLISH_STATUS")
         return states.PUBLISH_STATUS
     else:
+        logging.error("Configure digitizer failed")
         return states.CONFIGURE_ERROR
 
 def publish_status(s: status):
@@ -446,7 +455,8 @@ def publish_status(s: status):
         "config": json.loads(json.dumps(s.abcd_config)),
         "acquisition": {
             "running": False
-        }
+        },
+        "digitizer": {}  
     }
 
     HowIsDAQD = False
@@ -485,69 +495,58 @@ def receive_commands(s: status):
     commands_socket = s.commands_socket
 
     try:
-        # Non-blocking receive; adjust flags if needed for blocking or timeout
-        topic, msg_bytes = commands_socket.recv_multipart(flags=zmq.NOBLOCK)
-    except zmq.Again:
-        # No message received
-        msg_bytes = None
-
-    if msg_bytes is not None:
-        size = len(msg_bytes)
+        json_message = receive_json_message_no_topic(commands_socket,verbosity=s.verbosity)
         if s.verbosity > 0:
-            logging.info("Received message; size: {size}")
+            logging.info(f"Received message: {json_message}")
+    except Exception as e:
+        logging.error(f"Failed to receive commands: {e}")
+        return states.RECEIVE_COMMANDS
 
-        try:
-            message_str = msg_bytes.decode("utf-8")
-            if s.verbosity > 0:
-                logging.info("Message buffer: {message_str}")
+    if json_message:
 
-            json_message = json.loads(message_str)
-        except json.JSONDecodeError as e:
-            logging.error("ERROR: JSON decode error: {e}")
-            json_message = None
+        command = json_message.get("command")
+        if not isinstance(command, str):
+            try:
+                command = str(command)
+            except Exception:
+                command = None
 
-        if json_message:
-            command_ID = json_message.get("msg_ID", None)
-            command = json_message.get("command", "")
-            arguments = json_message.get("arguments", None)
+        if s.verbosity > 0:
+            logging.info(f"Message command: {command}")
 
-            if s.verbosity > 0:
-                logging.info("Command ID: {command_ID}")
+        # --- start ---
+        if command == "start":
+            logging.info(f"################################################################### Start!!! ###")
+            return states.START_ACQUISITION
+        
+        # --- reconfigure ---
+        elif command == "reconfigure" and "arguments" in json_message:
+            arguments = json_message["arguments"]
 
-            if command == "start":
-                logging.info("################################################################### Start!!! ###")
-                return states.START_ACQUISITION
+            if "config" in arguments:
+                # Update global status config (deep copy in case caller mutates later)
+                s.abcd_config = copy.deepcopy(arguments["config"])
 
-            elif command == "reconfigure" and arguments:
-                new_config = arguments.get("config", None)
-                if new_config:
-                    # Replace global config
-                    s.abcd_config = new_config  # Assuming dict or JSON-like
+                # Build and publish event
+                event_message = {
+                    "type": "event",
+                    "event": "Digitizer reconfiguration",
+                }
+                generic_publish_message(s, defaults_abcd_events_topic, event_message)
 
-                    success = generic_check_and_load_config(s)
-                    if not success:
-                        logging.error("New config not valid")
-                        return states.RECEIVE_COMMANDS
+                return states.CONFIGURE_DIGITIZER
+            else:
+                logging.error("Reconfigure command received, but no config provided")
+                return states.RECEIVE_COMMANDS
 
-                    # Publish event about reconfiguration
-                    event_msg = {
-                        "type": "event",
-                        "event": "Digitizer reconfiguration",
-                    }
-                    generic_publish_message(s, defaults_abcd_events_topic, event_msg)
+        # --- stop ---
+        elif command == "off":
+            # return states.CLEAR_MEMORY
+            return states.DESTROY_DIGITIZER
 
-                    return states.CONFIGURE_DIGITIZER
-                else:
-                    logging.error("Reconfigure command received, but no config provided")
-                    return states.RECEIVE_COMMANDS
-
-            elif command == "off":
-                # return states.CLEAR_MEMORY
-                return states.DESTROY_DIGITIZER
-
-            elif command == "quit":
-                # return states.CLEAR_MEMORY
-                return states.DESTROY_DIGITIZER
+        elif command == "quit":
+            # return states.CLEAR_MEMORY
+            return states.DESTROY_DIGITIZER
 
     # Check if we need to publish status due to timeout
     now = time.time()
@@ -632,40 +631,30 @@ def acquisition_receive_commands(s: status):
     commands_socket = s.commands_socket
 
     try:
-        # Non-blocking receive; adjust flags if needed for blocking or timeout
-        topic, msg_bytes = commands_socket.recv_multipart(flags=zmq.NOBLOCK)
-    except zmq.Again:
-        # No message received
-        msg_bytes = None
-
-    if msg_bytes is not None:
-        size = len(msg_bytes)
+        json_message = receive_json_message_no_topic(commands_socket,verbosity=s.verbosity)
         if s.verbosity > 0:
-            logging.info("Received message; size: {size}")
+            logging.info(f"Received message: {json_message}")
+    except Exception as e:
+        logging.error(f"Failed to receive commands: {e}")
+        return states.RECEIVE_COMMANDS
 
-        try:
-            message_str = msg_bytes.decode("utf-8")
-            if s.verbosity > 0:
-                logging.info("Message buffer: {message_str}")
+    if json_message:
 
-            json_message = json.loads(message_str)
-        except json.JSONDecodeError as e:
-            logging.error("ERROR: JSON decode error: {e}")
-            json_message = None
+        command = json_message.get("command")
+        if not isinstance(command, str):
+            try:
+                command = str(command)
+            except Exception:
+                command = None
 
-        if json_message:
-            command_ID = json_message.get("msg_ID", None)
-            command = json_message.get("command", "")
-            arguments = json_message.get("arguments", None)
+        if s.verbosity > 0:
+            logging.info(f"Message command: {command}")
 
-            if s.verbosity > 0:
-                logging.info("Command ID: {command_ID}")
-
-            if command == "stop":
-                logging.info("################################################################### Stop!!! ###")
-                return states.STOP_ACQUISITION
-            else:
-                logging.error(f"Recevied command: {command}. It is either unknown or not allowed during acquisition.")
+        if command == "stop":
+            logging.info("################################################################### Stop!!! ###")
+            return states.STOP_ACQUISITION
+        else:
+            logging.error(f"Recevied command: {command}. It is either unknown or not allowed during acquisition.")
 
     return states.POOL_DIGITIZER
 
