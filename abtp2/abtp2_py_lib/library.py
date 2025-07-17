@@ -9,80 +9,177 @@ Python-version of the functions defined in abcd/src/socket_functions.cpp
 
 import zmq
 import sys
+import json
+import time
+import logging
+
+def time_string():
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
 def send_byte_message(socket: zmq.Socket,
                       topic: bytes,
-                      buffer: bytes,
+                      buffer_bytes: bytes,
                       verbosity: int = 0) -> bool:
     """
-    Sends a message through a ZeroMQ socket.
+    Send a raw byte message over a ZeroMQ socket, optionally prefixed by a topic + space.
 
-    Parameters:
-    - socket:      a zmq.Socket instance (PUB)
-    - topic:       the topic as bytes, or b'' for no topic
-    - buffer:      payload bytes
-    - verbosity:   0 = silent, >1 = debug prints
+    Args:
+        socket (zmq.Socket): Destination ZeroMQ socket (e.g., PUB, PUSH, etc.).
+        topic (str): Topic prefix. If non-empty, a trailing space is appended before the payload.
+        buffer_bytes (bytes | bytearray | memoryview): Raw payload.
+        verbosity (int): >0 prints debug info.
 
-    Returns True on success, False on failure.
+    Returns:
+        bool: True on (apparent) success, False on error.
     """
-    # Build envelope
+
+    # Normalize topic (append space if non-empty)
     if topic:
-        envelope = topic + b' ' + buffer
+        topic_with_space = topic + " "
     else:
-        envelope = buffer
+        topic_with_space = ""
 
-    if verbosity > 1:
-        topic_size = len(topic)
-        envelope_size = len(envelope)
-        print(f"Topic size: {topic_size}; Envelope size: {envelope_size}", file=sys.stderr)
-
+    # Ensure bytes payload
     try:
-        # socket.send returns number of bytes on success
-        socket.send(envelope)
-        return True
-
-    except zmq.ZMQError as e:
-        if verbosity > 0:
-            print(f"ERROR: ZeroMQ Error on send: {e}", file=sys.stderr)
+        payload = bytes(buffer_bytes)  # safe copy / conversion
+    except Exception as e:
+        logging.info(f"Error converting payload to bytes: {e}", file=sys.stderr)
         return False
+    
+    topic_bytes = topic_with_space.encode("utf-8")
+    frame = topic_bytes + payload
+    envelope_size = len(frame)
+
+    if verbosity > 0:
+        logging.info(f"Message size: {envelope_size}")
+
+    # Send
+    try:
+        #pyzmq's send() returns None on success; will raise ZMQError on failure.
+        socket.send(frame, flags=0)
+    except zmq.ZMQError as e:
+        logging.error(f"ZeroMQ Error on send: {e}", file=sys.stderr)
+        return False
+
+    return True
     
 
 def receive_byte_message(socket: zmq.Socket, extract_topic: bool = True, verbosity: int = 0):
     """
-    Receive a message from a ZeroMQ socket.
+    Non-blocking receive of a raw byte message from a ZeroMQ socket.
 
-    Parameters:
-    - socket:         a zmq.Socket (e.g. SUB)
-    - extract_topic:  if True, split topic and data (default: True)
-    - verbosity:      0 = silent, >0 = prints errors/info
+    Args:
+        socket (zmq.Socket): The ZeroMQ socket to read from.
+        verbosity (int): >0 enables debug prints.
 
     Returns:
-    - (topic: str | None, data: bytes | None), or (None, None) if no message
+        bytes: The received message payload, or empty bytes if no message or error.
     """
     try:
-        # non-blocking receive
+        # Non-blocking receive
         message = socket.recv(flags=zmq.DONTWAIT)
     except zmq.Again:
-        # no message available
-        return None, None
+        # No message available
+        return b""
     except zmq.ZMQError as e:
-        if verbosity > 0:
-            print(f"ERROR: ZeroMQ receive error: {e}", file=sys.stderr)
-        return None, None
+        logging.error(f"ZeroMQ Error on receive: {e}", file=sys.stderr)
+        return b""
 
     if verbosity > 0:
-        print(f"Received message of size: {len(message)}", file=sys.stderr)
+        logging.info(f"Message length: {len(message)}")
 
-    if extract_topic:
-        try:
-            topic_raw, data = message.split(b' ', 1)
-            topic = topic_raw.decode('utf-8')
-            if verbosity > 0:
-                print(f"Extracted topic: '{topic}', Data size: {len(data)}", file=sys.stderr)
-            return topic, data
-        except ValueError:
-            if verbosity > 0:
-                print("ERROR: No topic separator found in message", file=sys.stderr)
-            return None, None
+    return message
+    
+def receive_json_message_no_topic(socket, verbosity=0):
+    """
+    Non-blocking receive of a JSON message from a ZeroMQ socket.
+
+    Args:
+        socket (zmq.Socket): Socket to read from.
+        verbosity (int): >0 prints debug info.
+
+    Returns:
+        dict: Parsed JSON object, or {} if no message / error / parse failure.
+    """
+    try:
+        # Non-blocking receive (raw bytes)
+        raw = socket.recv(flags=zmq.DONTWAIT)
+    except zmq.Again:
+        # No message available
+        return {}
+    except zmq.ZMQError as e:
+        logging.error(f"ZeroMQ Error on receive: {e}", file=sys.stderr)
+        return {}
+
+    # Decode as UTF-8 text (C++ code assumes char* -> string)
+    try:
+        message = raw.decode("utf-8", errors="replace")
+    except Exception as e:
+        logging.error(f"Error decoding message bytes: {e}", file=sys.stderr)
+        return {}
+
+    if verbosity > 0:
+        # The C++ prints message, length, recv result, and msg_size (same in Python len(raw))
+        logging.info(f"Message: '{message}' length: {len(message)}, {len(raw)}, {len(raw)}")
+
+    # Parse JSON
+    try:
+        json_message = json.loads(message)
+    except json.JSONDecodeError as e:
+        logging.error(f"JSON parsing error: {e}", file=sys.stderr)
+        return {}
+
+    return json_message
+
+def receive_json_message(socket, topic_ref, verbosity=None):
+    """
+    Receives a JSON message from a ZeroMQ socket in non-blocking mode.
+    
+    Args:
+        socket (zmq.Socket): The ZeroMQ socket.
+        topic_ref (list): A mutable container to store the topic string (e.g., ['']).
+        verbosity (int): Verbosity level for logging.
+        
+    Returns:
+        dict: Parsed JSON message, or empty dict if no message or error.
+    """
+    try:
+        # Try to receive a message in non-blocking mode
+        message = socket.recv(flags=zmq.DONTWAIT).decode('utf-8')
+    except zmq.Again:
+        # No message available
+        return {}
+    except zmq.ZMQError as e:
+        logging.error(f"ZeroMQ Error on receive: {e}")
+        return {}
+
+    # Get the socket type
+    try:
+        socket_type = socket.getsockopt(zmq.TYPE)
+    except zmq.ZMQError as e:
+        logging.error(f"ZeroMQ Error on getsockopt: {e}")
+        socket_type = None
+
+    # Handle SUB sockets (with topic prefix)
+    json_message_str = message
+    if socket_type == zmq.SUB:
+        if ' ' in message:
+            topic, json_message_str = message.split(' ', 1)
+            topic_ref[0] = topic
+        else:
+            # No space found, no topic
+            topic_ref[0] = ''
     else:
-        return None, message
+        topic_ref[0] = ''
+
+    if verbosity>0:
+        logging.info(f"Message: '{json_message_str}', length: {len(json_message_str)}")
+
+    # Parse JSON
+    try:
+        json_message = json.loads(json_message_str)
+    except json.JSONDecodeError as e:
+        logging.error(f"JSON parsing error: {e}")
+        return {}
+
+    return json_message
