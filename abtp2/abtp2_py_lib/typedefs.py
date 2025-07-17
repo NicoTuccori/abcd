@@ -17,7 +17,6 @@ import time
 import os
 import socket
 import threading
-import queue
 import logging
 
 # manager of the daqd daemon
@@ -150,6 +149,9 @@ class status:
     tp2_config_file: Any = None
     tp2_config: Any = None
     working_folder: Any = None
+
+    # PETsys temperature
+    sensor_list: List[Any] = field(default_factory=list)
 
     retval: int = -1
     client_socket: int = -1

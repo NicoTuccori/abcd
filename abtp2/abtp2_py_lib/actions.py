@@ -13,13 +13,14 @@ from datetime import datetime
 import logging
 import threading
 import copy
+import shutil
 from .library import send_byte_message, receive_json_message_no_topic
 from .typedefs import status, daqd_daemon
 from . import states
 
 import os
 
-from .petsys_lib import daqd, config, fe_power
+from .petsys_lib import daqd, config, fe_power, fe_temperature
 
 # Define or import your delay constant (ms)
 defaults_abcd_zmq_delay = 100  # replace with actual constant if needed
@@ -120,6 +121,7 @@ def generic_create_digitizer(s: status) -> bool:
         if HowIsDAQD:
             if s.verbosity > 0:
                 logging.info("DAQ daemon running.")
+            time.sleep(1)
         else:
             logging.error(f"Failed to find the DAQ daemon: HowIsDAQD = {HowIsDAQD}")
             return False
@@ -228,7 +230,8 @@ def generic_configure_digitizer(s: status) -> bool:
     try:
         if (s.abcd_config["portID"] != None and s.abcd_config["slaveID"] != None):
             for p, s in s.connection.getActiveFEBDs():
-                fe_power.set_fem_power(s.connection,p,s,"off")  
+                fe_power.set_fem_power(s.connection,p,s,"off")
+                time.sleep(0.01)
             s.connection.initializeSystem(power_lst = [(s.abcd_config["portID"], s.abcd_config["slaveID"])])
         else:
             s.connection.initializeSystem()
@@ -260,8 +263,12 @@ def generic_destroy_digitizer(s: status) -> None:
 
     try:
         for portID, slaveID in s.connection.getActiveFEBDs(): 
-            fe_power.set_bias_power(s.connection, portID, slaveID, "off")
-            fe_power.set_fem_power(s.connection, portID, slaveID, "off")
+            if fe_power.get_bias_power_status(s.connection, portID, slaveID):
+                fe_power.set_bias_power(s.connection, portID, slaveID, "off")
+                time.sleep(0.01)
+            if fe_power.get_fem_power_status(s.connection, portID, slaveID):
+                fe_power.set_fem_power(s.connection, portID, slaveID, "off")
+                time.sleep(0.01)
         if s.verbosity > 0:
             logging.info("SiPM bias OFF & FEM OFF")
     except:
@@ -280,7 +287,9 @@ def generic_stop_acquisition(s: status) -> None:
         logging.info(f"#### Stopping acquisition!!!")
     try:
         for portID, slaveID in s.connection.getActiveFEBDs(): 
-            fe_power.set_bias_power(s.connection, portID, slaveID, "off")
+            if fe_power.get_bias_power_status(s.connection, portID, slaveID):
+                fe_power.set_bias_power(s.connection, portID, slaveID, "off")
+                time.sleep(0.01)
         if s.verbosity > 0:
             logging.info("SiPM bias OFF")
     except Exception as e:
@@ -582,6 +591,7 @@ def start_acquisition(s: status):
     try:
         for portID, slaveID in s.connection.getActiveFEBDs(): 
             fe_power.set_bias_power(s.connection, portID, slaveID, "on")
+            time.sleep(0.01)
         if s.verbosity > 0:
             logging.info("SiPM bias ON")
     except:
@@ -621,6 +631,16 @@ def start_acquisition(s: status):
     else:
         # TO DO FOR PARAM SCANS
         True
+
+    if s.verbosity > 0:
+        logging.info("Copying config file")
+    
+    # # Copy config files
+    # shutil.copyfile(s.working_folder + "/abcd_config.tsv", s.working_folder + "/" + s.fileNamePrefix + "_abcd_config.tsv")
+    # shutil.copyfile(s.working_folder + "/disc_settings.tsv", s.working_folder + "/" + s.fileNamePrefix + "_disc_settings.tsv")
+    # shutil.copyfile(s.working_folder + "/map_channel.tsv", s.abcd_config["fileNamePrefix"] + "_map_channel.tsv")
+    # shutil.copyfile(s.working_folder + "/map_trigger.tsv", s.abcd_config["fileNamePrefix"] + "_map_trigger.tsv")
+    # shutil.copyfile(s.working_folder + "/config.ini", s.abcd_config["fileNamePrefix"] + "_config.ini")
 
     s.start_time = time.time()
     
@@ -685,6 +705,20 @@ def stop_acquisition(s: status):
     }
 
     generic_publish_message(s, defaults_abcd_events_topic, event_json)
+
+    HowIsDAQD = False
+    try:
+        HowIsDAQD = s.daemon.is_daqd_running()
+        if HowIsDAQD:
+            if s.verbosity > 0:
+                logging.info("DAQ daemon running.")
+            time.sleep(1)
+        else:
+            logging.error(f"Failed to find the DAQ daemon: HowIsDAQD = {HowIsDAQD}")
+            return states.DIGITIZER_ERROR
+    except Exception as e:
+        logging.error(f"Failed to check if DAQ daemon is running: {e}")
+        return states.DIGITIZER_ERROR
 
     return states.RECEIVE_COMMANDS
 
@@ -849,8 +883,10 @@ def digitizer_error(s: status):
     generic_publish_message(s, defaults_abcd_events_topic, json_event_message)
 
     try:
-        for portID, slaveID in s.connection.getActiveFEBDs(): 
-            fe_power.set_bias_power(s.connection, portID, slaveID, "off")
+        for portID, slaveID in s.connection.getActiveFEBDs():
+            if fe_power.get_bias_power_status(s.connection, portID, slaveID):
+                fe_power.set_bias_power(s.connection, portID, slaveID, "off")
+                time.sleep(0.01)
         if s.verbosity > 0:
             logging.info("SiPM bias OFF")
     except:
@@ -872,7 +908,9 @@ def acquisition_error(s: status):
 
     try:
         for portID, slaveID in s.connection.getActiveFEBDs(): 
-            fe_power.set_bias_power(s.connection, portID, slaveID, "off")
+            if fe_power.get_bias_power_status(s.connection, portID, slaveID):
+                fe_power.set_bias_power(s.connection, portID, slaveID, "off")
+                time.sleep(0.01)
         if s.verbosity > 0:
             logging.info("SiPM bias OFF")
     except:

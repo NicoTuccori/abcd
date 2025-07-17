@@ -1,0 +1,6 @@
+- instead of using config.ini file, define settings in abcd_config.
+    - probably needs to define a function in config.py 
+
+- how to start the temperature monitor?
+    - new module? or use the current tofpet2 module?
+    - how to display temp over time in GUI?
