@@ -737,6 +737,38 @@ def start_acquisition(s: status):
     s.start_time = time.time()
 
     s.publish_temp = True
+    # From read_temperature_sensors of petsys_util
+    try:
+        with open(s.abcd_config["fileNamePrefix"] + "_temperature.tsv", "w") as fd:
+            locations_list = [sensor.get_location() for sensor in s.sensor_list]
+            fd.write("# Absolute Sensor ID format : portID_slaveID_moduleID_SensorID\n")
+            fd.write("# Sensor ID is:\n")
+            if any(location[3] > 1 for location in locations_list): #module is FEM256
+                fd.write("# A0 - Sensor on FEM 256 (ASIC 0)\n")
+                fd.write("# A1 - Sensor on FEM 256 (ASIC 1)\n")
+                fd.write("# A2 - Sensor on FEM 256 (ASIC 2)\n")
+                fd.write("# A3 - Sensor on FEM 256 (ASIC 3)\n")  
+                fd.write("# S0 - Sensor on FEB/S (SIPM read by ASIC 0)\n")
+                fd.write("# S1 - Sensor on FEB/S (SIPM read by ASIC 1)\n")
+                fd.write("# S2 - Sensor on FEB/S (SIPM read by ASIC 2)\n")
+                fd.write("# S3 - Sensor on FEB/S (SIPM read by ASIC 3)\n")                       
+            else:
+                fd.write("# A0 - Sensor on FEB/A (ASIC 0) connected to port J1 of the FEB/I\n")
+                fd.write("# A1 - Sensor on FEB/A (ASIC 1) connected to port J2 of the FEB/I\n")
+                fd.write("# S0 - Sensor on FEB/S (SIPM) connected to port J1 of the FEB/I\n")
+                fd.write("# S1 - Sensor on FEB/S (SIPM) connected to port J2 of the FEB/I\n")               
+
+            fd.write("#\n#DAQ timestamp\tSystem time")
+
+            for (portID,slaveID, moduleID, sensorID, sensorPlace) in locations_list:
+                sid = 'A'+ str(sensorID)   
+                if sensorPlace == "sipm":
+                    sid = 'S'+ str(sensorID)   
+                fd.write("\t%d_%d_%d_%s" % (portID,slaveID,moduleID,sid))
+            fd.write("\n")
+
+    except Exception as e:
+        logging.error(f"Failed to write temperature to file: {e}")
     
     return states.ACQUISITION_RECEIVE_COMMANDS
 
@@ -840,6 +872,18 @@ def acquisition_publish_temperature(s: status):
         logging.error("Failed to read and publish temperature")
         s.publish_temp = False
         return states.ACQUISITION_RECEIVE_COMMANDS
+    
+    # From read_temperature_sensors of petsys_util
+    try:
+        with open(s.abcd_config["fileNamePrefix"] + "_temperature.tsv", "a") as fd:
+            fd.write("%d\t%d" %(s.connection.getCurrentTimeTag(), time.time()))
+            for sensor in s.sensor_list:
+                temp = sensor.get_temperature()
+                fd.write("\t%.2f" % temp)
+            fd.write("\n")
+            fd.flush()
+    except Exception as e:
+        logging.error(f"Failed to write temperature to file: {e}")
     
     return states.ACQUISITION_RECEIVE_COMMANDS
 
