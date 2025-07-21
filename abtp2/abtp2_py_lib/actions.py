@@ -14,7 +14,7 @@ import logging
 import threading
 import copy
 import shutil
-from .library import send_byte_message, receive_json_message_no_topic, EVENT_SIZE
+from .library import send_byte_message, receive_json_message_no_topic, encode_temp_sensor, EVENT_SIZE
 from .typedefs import status, daqd_daemon
 from . import states
 
@@ -27,6 +27,7 @@ defaults_abcd_zmq_delay = 100  # replace with actual constant if needed
 defaults_abcd_events_topic = "events_abcd"
 defaults_abcd_status_topic = "status_abcd"
 defaults_abcd_publish_timeout = 10
+defaults_abcd_temp_publish_timeout = 30
 
 #******************************************************************************/
 #* Generic actions                                                            */
@@ -60,7 +61,7 @@ def generic_publish_message(s: status, topic: str, status_message: dict):
 
     s.status_msg_ID += 1
 
-def generic_publish_events(s: status, topic: str, status_message: dict):
+def generic_publish_events(s: status):
     
     buffer_size = len(s.events_buffer) // EVENT_SIZE
     data_size = len(s.events_buffer)
@@ -447,6 +448,34 @@ def generic_acquisition_publish_status(s: status, frames, wall_time, data_time, 
     # Publish the message over ZMQ or your messaging system
     generic_publish_message(s, defaults_abcd_status_topic, status_message)
 
+def generic_publish_temperature(s: status) -> bool:
+
+    timestamp = int(time.time())
+    try:
+        for sensor in s.sensor_list:
+            portID, slaveID, moduleID, sensorID, sensorPlace = sensor.get_location()
+            sensor_16bit = encode_temp_sensor(portID, slaveID, moduleID, sensorID, sensorPlace)
+            temp = int(sensor.get_temperature()*100)
+            s.add_event(s.events_buffer, 
+                        timestamp=timestamp, 
+                        qshort=temp, 
+                        qlong=0, 
+                        baseline=sensor_16bit, 
+                        channel=0, 
+                        group_counter=0)
+    except Exception as e:
+        logging.error(f"Failed to fill event buffer with temperature: {e}")
+        return False
+    
+    try:
+        generic_publish_events(s)
+    except Exception as e:
+        logging.error(f"Failed to publish temperature: {e}")
+        return False
+
+    return True
+    
+
 #******************************************************************************/
 #* Digitizer-specific actions                                                   */
 #******************************************************************************/
@@ -606,6 +635,9 @@ def receive_commands(s: status):
                 logging.error("Reconfigure command received, but no config provided")
                 return states.RECEIVE_COMMANDS
 
+        elif command == "start temperature":
+            s.publish_temp = True
+
         # --- stop ---
         elif command == "off":
             # return states.CLEAR_MEMORY
@@ -620,6 +652,10 @@ def receive_commands(s: status):
     last_pub = s.last_publication
     if (now - last_pub) > defaults_abcd_publish_timeout:
         return states.PUBLISH_STATUS
+    
+    last_pub_temp = s.last_temp_publication
+    if s.publish_temp and (now - last_pub_temp) > defaults_abcd_temp_publish_timeout:
+        return states.PUBLISH_TEMPERATURE
 
     # Default: keep receiving commands
     return states.RECEIVE_COMMANDS
@@ -699,6 +735,8 @@ def start_acquisition(s: status):
     # shutil.copyfile(s.working_folder + "/config.ini", s.abcd_config["fileNamePrefix"] + "_config.ini")
 
     s.start_time = time.time()
+
+    s.publish_temp = True
     
     return states.ACQUISITION_RECEIVE_COMMANDS
 
@@ -731,6 +769,11 @@ def acquisition_receive_commands(s: status):
             return states.STOP_ACQUISITION
         else:
             logging.error(f"Recevied command: {command}. It is either unknown or not allowed during acquisition.")
+
+    now = time.time()
+    last_pub_temp = s.last_temp_publication
+    if s.publish_temp and (now - last_pub_temp) > defaults_abcd_temp_publish_timeout:
+        return states.PUBLISH_TEMPERATURE
 
     return states.POLL_DIGITIZER
 
@@ -777,6 +820,28 @@ def stop_acquisition(s: status):
         return states.DIGITIZER_ERROR
 
     return states.RECEIVE_COMMANDS
+
+def publish_temperature(s: status):
+
+    success = generic_publish_temperature(s)
+
+    if not success:
+        logging.error("Failed to read and publish temperature")
+        s.publish_temp = False
+        return states.RECEIVE_COMMANDS
+    
+    return states.RECEIVE_COMMANDS
+
+def acquisition_publish_temperature(s: status):
+
+    success = generic_publish_temperature(s)
+
+    if not success:
+        logging.error("Failed to read and publish temperature")
+        s.publish_temp = False
+        return states.ACQUISITION_RECEIVE_COMMANDS
+    
+    return states.ACQUISITION_RECEIVE_COMMANDS
 
 #******************************************************************************/
 #* Sockets-specific actions                                                   */

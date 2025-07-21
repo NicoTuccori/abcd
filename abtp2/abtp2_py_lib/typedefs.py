@@ -169,15 +169,20 @@ class status:
     verbosity: int = 0
     status_msg_ID: int = 0
     events_msg_ID: int = 0
+    publish_temp: bool = False
 
     # Timing
     start_time: float = field(default_factory=lambda: time.time())
     block_start_time: float = 0.0
     stop_time: float = 0.0
     last_publication: float = field(default_factory=lambda: time.time())
+    last_temp_publication: float = field(default_factory=lambda: time.time())
 
     def update_timestamp(self):
         self.last_publication = time.time()
+
+    def update_temp_timestamp(self):
+        self.last_temp_publication = time.time()
 
     def add_event(self, timestamp, qshort, qlong, baseline, channel, group_counter):
         self.events_buffer.extend(pack_event(timestamp, qshort, qlong, baseline, channel, group_counter))

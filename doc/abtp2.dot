@@ -19,9 +19,11 @@ digraph D {
             <TR><TD PORT="f1">SiPM ON</TD></TR>
         </TABLE>
     >];
+    publish_temperature [label = "Publish\ntemperature"]
     stop_acquisition [label = "Stop\nacquisition\nSiPM OFF"];
 
     acquisition_receive_commands [label = "Receive\ncommands"];
+    acquisition_publish_temperature [label = "Publish\ntemperature"]
     acquisition_thread [label = "Acquisition\nthread", style="dashed", color = "green"];
     publish_acquisition_status [label = "Publish\nAcquisition status", style="dashed", color = "green"];
     poll_digitizer [label = "Poll\nacquisiton thread"];
@@ -40,12 +42,12 @@ digraph D {
     {rank = "same"; bind_sockets communication_error}
     {rank = "same"; read_config parse_error}
     {rank = "same"; configure_digitizer digitizer_error}
-    {rank = "same"; receive_commands destroy_digitizer close_sockets}
+    {rank = "same"; receive_commands destroy_digitizer close_sockets destroy_context stop}
     {rank = "same"; start_acquisition_1 acquisition_error }
     // {rank = "same"; acquisition_thread publish_acquisition_status}
-    // {rank = "same"; acquisition_thread}
+    {rank = "same"; publish_status publish_temperature}
+    {rank = "same"; acquisition_publish_temperature}
     {rank = "same"; acquisition_receive_commands poll_digitizer}
-    {rank = "same"; close_sockets destroy_context stop}
     {rank = "same"; stop_acquisition}
 
     start -> create_context;
@@ -60,6 +62,7 @@ digraph D {
 
     receive_commands -> receive_commands;
     receive_commands -> publish_status [label = "Timeout", tailport = "ne", headport = "se", color = "purple"];
+    receive_commands -> publish_temperature [label = "Start temperature /\nTimeout", color = "blue"];
     receive_commands -> start_acquisition_1:f0 [label = "Start", color = "blue"];
 
     start_acquisition_1:f1 -> acquisition_thread [style="dotted"];
@@ -74,6 +77,11 @@ digraph D {
     acquisition_receive_commands -> stop_acquisition [label="Stop", weight=8, color = "blue"];
     stop_acquisition -> receive_commands;
     receive_commands -> configure_digitizer [label = "Reconfigure", color = "blue"];
+
+    // start_acquisition_temperature -> publish_temperature;
+    publish_temperature -> receive_commands;
+    acquisition_receive_commands -> acquisition_publish_temperature [label = "Timeout", color = "purple"];
+    acquisition_publish_temperature -> acquisition_receive_commands;
 
     parse_error -> close_sockets;
 

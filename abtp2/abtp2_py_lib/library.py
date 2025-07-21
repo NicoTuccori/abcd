@@ -25,6 +25,14 @@ def time_string():
 def pack_event(timestamp: int, qshort: int, qlong: int, baseline: int, channel: int, group_counter: int) -> bytes:
     return EVENT_STRUCT.pack(timestamp, qshort, qlong, baseline, channel, group_counter)
 
+def encode_temp_sensor(portID: int, slaveID: int, moduleID: int, sensorID: int, sensorPlace: str) -> int:
+    kind = 1 if sensorPlace == 'sipm' else 0
+    return ((portID & 0x07) << 13) | \
+           ((slaveID & 0x07) << 10) | \
+           ((moduleID & 0x0F) << 6) | \
+           ((sensorID & 0x07) << 3) | \
+           (kind & 0x01)
+
 def send_byte_message(socket: zmq.Socket,
                       topic: bytes,
                       buffer_bytes: bytes,
