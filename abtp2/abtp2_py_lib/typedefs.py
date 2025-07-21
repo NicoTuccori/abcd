@@ -20,6 +20,8 @@ import threading
 import logging
 import pathlib
 
+from .library import pack_event
+
 # manager of the daqd daemon
 class daqd_daemon:
     def __init__(self,
@@ -154,6 +156,10 @@ class status:
     # PETsys temperature
     sensor_list: List[Any] = field(default_factory=list)
 
+    # ABCD events buffer
+    events_buffer: bytearray = field(default_factory=bytearray)
+    events_buffer_max_size: int = 1024
+
     retval: int = -1
     client_socket: int = -1
     shm_fd: int = -1
@@ -162,7 +168,7 @@ class status:
 
     verbosity: int = 0
     status_msg_ID: int = 0
-    data_msg_ID: int = 0
+    events_msg_ID: int = 0
 
     # Timing
     start_time: float = field(default_factory=lambda: time.time())
@@ -172,6 +178,9 @@ class status:
 
     def update_timestamp(self):
         self.last_publication = time.time()
+
+    def add_event(self, timestamp, qshort, qlong, baseline, channel, group_counter):
+        self.events_buffer.extend(pack_event(timestamp, qshort, qlong, baseline, channel, group_counter))
 
 # Equivalent to C++ struct state
 action = Callable[[status], Any]

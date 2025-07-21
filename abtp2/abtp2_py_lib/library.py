@@ -12,9 +12,18 @@ import sys
 import json
 import time
 import logging
+import struct
+
+# ABCD event struct
+# Little-endian like typical C++ on x86 (adjust '<' to '>' for big-endian if needed)
+EVENT_STRUCT = struct.Struct('<QHHHBB')  # Q=uint64, H=uint16, H=uint16, H=uint16, B=uint8, B=uint8
+EVENT_SIZE = EVENT_STRUCT.size  # should be 16 bytes
 
 def time_string():
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+def pack_event(timestamp: int, qshort: int, qlong: int, baseline: int, channel: int, group_counter: int) -> bytes:
+    return EVENT_STRUCT.pack(timestamp, qshort, qlong, baseline, channel, group_counter)
 
 def send_byte_message(socket: zmq.Socket,
                       topic: bytes,

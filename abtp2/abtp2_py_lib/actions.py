@@ -14,7 +14,7 @@ import logging
 import threading
 import copy
 import shutil
-from .library import send_byte_message, receive_json_message_no_topic
+from .library import send_byte_message, receive_json_message_no_topic, EVENT_SIZE
 from .typedefs import status, daqd_daemon
 from . import states
 
@@ -59,6 +59,36 @@ def generic_publish_message(s: status, topic: str, status_message: dict):
         logging.warning("Message failed to send on ZeroMQ socket.")
 
     s.status_msg_ID += 1
+
+def generic_publish_events(s: status, topic: str, status_message: dict):
+    
+    buffer_size = len(s.events_buffer) // EVENT_SIZE
+    data_size = len(s.events_buffer)
+
+    if buffer_size == 0:
+        return
+
+    topic = f"{defaults_abcd_events_topic}_v0_n{s.events_msg_ID}_s{data_size}"
+
+    if s.verbosity > 0:
+        logging.info(f"Sending binary buffer; "
+                     f"Topic: {topic}; events: {buffer_size}; buffer size: {data_size};")
+
+    result = send_byte_message(
+        socket=s.data_socket,
+        topic=topic,
+        buffer_bytes=s.events_buffer,  # bytearray is already bytes-like
+        verbosity=s.verbosity,
+    )
+
+    s.events_msg_ID += 1
+
+    if not result:
+        logging.warning(f"ZeroMQ Error publishing events")
+
+    # Reset buffer
+    s.events_buffer.clear()
+    # s.events_buffer.reserve = s.events_buffer_max_size * EVENT_SIZE
 
 def generic_create_digitizer(s: status) -> bool:
 
@@ -234,6 +264,20 @@ def generic_configure_digitizer(s: status) -> bool:
         time.sleep(1)
     except Exception as e:
         logging.error(f"Failed to initialise system: {e}")
+        return False
+    
+    try:
+        s.sensor_list = fe_temperature.get_sensor_list(s.connection, debug=s.verbosity)
+        if not s.sensor_list:
+            logging.error("No temperature sensors found. Check FEM connections and power.")
+            return False
+        else:
+            s.sensor_list.sort(key = lambda x:x.get_location())
+            if s.verbosity > 0:
+                for sensor in s.sensor_list: 
+                    logging.info(f"Found temperature sensor at {sensor.get_location()}: {sensor.get_temperature()} ºC")
+    except Exception as e:
+        logging.error(f"Failed to get temperature sensors: {e}")
         return False
 
     if s.verbosity > 0:
