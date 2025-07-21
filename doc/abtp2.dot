@@ -1,0 +1,101 @@
+digraph D {
+    graph [nodesep=0.4, ranksep=0.6];
+    node [fontname = "Linux Biolinum"];
+    edge [fontname = "Linux Biolinum"];
+
+    start [label = "Start", peripheries = 2];
+    create_context [label = "Create ZeroMQ\ncontext"];
+    create_sockets [label = "Create\nsockets"];
+    bind_sockets [label = "Bind\nsockets"];
+    read_config [label = "Read\nconfiguration"];
+    create_digitizer [label = "Create\ndigitizer"];
+    configure_digitizer [label = "Configure\ndigitizer\nFEM ON"];
+
+    receive_commands [label = "Receive\ncommands"];
+    publish_status [label = "Publish\nstatus"];
+    start_acquisition_1 [shape=none, margin=0, label=<
+        <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0">
+            <TR><TD PORT="f0">Start<br/>acquisition<br/>SiPM OFF</TD></TR>
+            <TR><TD PORT="f1">SiPM ON</TD></TR>
+        </TABLE>
+    >];
+    stop_acquisition [label = "Stop\nacquisition\nSiPM OFF"];
+
+    acquisition_receive_commands [label = "Receive\ncommands"];
+    acquisition_thread [label = "Acquisition\nthread", style="dashed", color = "green"];
+    publish_acquisition_status [label = "Publish\nAcquisition status", style="dashed", color = "green"];
+    poll_digitizer [label = "Poll\nacquisiton thread"];
+
+    destroy_digitizer [label = "Destroy\ndigitizer"];
+    close_sockets [label = "Close\nsockets"];
+    destroy_context [label = "Destroy\ncontext"];
+    stop [label = "Stop", peripheries = 2];
+
+    communication_error [label = "Communication\nError", color = "red"];
+    parse_error [label = "Parse\nError", color = "red"];
+    digitizer_error [label = "Digitizer / Configuration\nError", color = "red"];
+    acquisition_error [label = "Acquisition\nError\nSiPM OFF", color = "red"];
+
+    {rank = "source"; start}
+    {rank = "same"; bind_sockets communication_error}
+    {rank = "same"; read_config parse_error}
+    {rank = "same"; configure_digitizer digitizer_error}
+    {rank = "same"; receive_commands destroy_digitizer close_sockets}
+    {rank = "same"; start_acquisition_1 acquisition_error }
+    // {rank = "same"; acquisition_thread publish_acquisition_status}
+    // {rank = "same"; acquisition_thread}
+    {rank = "same"; acquisition_receive_commands poll_digitizer}
+    {rank = "same"; close_sockets destroy_context stop}
+    {rank = "same"; stop_acquisition}
+
+    start -> create_context;
+    create_context -> create_sockets [label = "ZeroMQ\nOK"];
+    create_sockets -> bind_sockets [label = "ZeroMQ\nOK"];
+    bind_sockets -> read_config [label = "ZeroMQ\nOK"];
+
+    read_config -> create_digitizer;
+    create_digitizer -> configure_digitizer;
+    configure_digitizer -> publish_status;
+    publish_status -> receive_commands;
+
+    receive_commands -> receive_commands;
+    receive_commands -> publish_status [label = "Timeout", tailport = "ne", headport = "se", color = "purple"];
+    receive_commands -> start_acquisition_1:f0 [label = "Start", color = "blue"];
+
+    start_acquisition_1:f1 -> acquisition_thread [style="dotted"];
+    // acquisition_thread -> acquisition_thread [style="dashed", color = "green"];
+    acquisition_thread -> publish_acquisition_status [style="dashed", color = "green"];
+    publish_acquisition_status -> acquisition_thread [style="dashed", color = "green"];
+    start_acquisition_1:f1 -> acquisition_receive_commands;
+
+    acquisition_receive_commands -> poll_digitizer;
+    poll_digitizer -> acquisition_receive_commands;
+    poll_digitizer -> stop_acquisition [label = "Timeout /\n Acquisition finished", color = "purple"];
+    acquisition_receive_commands -> stop_acquisition [label="Stop", weight=8, color = "blue"];
+    stop_acquisition -> receive_commands;
+    receive_commands -> configure_digitizer [label = "Reconfigure", color = "blue"];
+
+    parse_error -> close_sockets;
+
+    create_context -> communication_error [label = "ZeroMQ\nError", color = "red"];
+    create_sockets -> communication_error [label = "ZeroMQ\nError", color = "red"];
+    bind_sockets -> communication_error [label = "ZeroMQ\nError", color = "red"];
+    communication_error -> close_sockets [headport = "ne"];
+
+    create_digitizer -> digitizer_error [label = "Digitizer\nError", color = "red"];
+    read_config -> parse_error [label = "Parse\nError", color = "red"];
+    configure_digitizer -> digitizer_error [label = "Configuration\nError", color = "red"];
+    publish_status -> digitizer_error [label = "Digitizer\nError", color = "red"];
+
+    start_acquisition_1:f0 -> digitizer_error [label = "Digitizer\nError", color = "red"];
+    start_acquisition_1:f1 -> acquisition_error [label = "Acquisition\nError", color = "red"];
+    // acquisition_thread -> acquisition_error [label = "Acquisition\nError", color = "red"];
+    
+    digitizer_error -> destroy_digitizer;
+    acquisition_error -> destroy_digitizer;
+
+    receive_commands -> destroy_digitizer [label = "Quit / Off", color = "blue"];
+    destroy_digitizer -> close_sockets;
+    close_sockets -> destroy_context;
+    destroy_context -> stop;
+}

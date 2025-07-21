@@ -297,6 +297,22 @@ def generic_configure_digitizer(s: status) -> bool:
 
     return True
 
+def generic_set_sipm_bias(s: status, bias: str) -> None:
+    try:
+        for portID, slaveID in s.connection.getActiveFEBDs():
+            fe_power.set_bias_power(s.connection, portID, slaveID, bias)
+            time.sleep(0.01)
+    except Exception as e:
+        logging.error(f"Error during setting SiPM bias voltage: {e}")
+
+def generic_set_fem_bias(s: status, bias: str) -> None:
+    try:
+        for portID, slaveID in s.connection.getActiveFEBDs():
+            fe_power.set_fem_power(s.connection, portID, slaveID, bias)
+            time.sleep(0.01)
+    except Exception as e:
+        logging.error(f"Error during setting FEM power: {e}")
+
 def generic_destroy_digitizer(s: status) -> None:
 
     if s.verbosity > 0:
@@ -304,17 +320,18 @@ def generic_destroy_digitizer(s: status) -> None:
         logging.info("Shutting down DAQ daemon")
 
     try:
-        for portID, slaveID in s.connection.getActiveFEBDs(): 
-            if fe_power.get_bias_power_status(s.connection, portID, slaveID):
-                fe_power.set_bias_power(s.connection, portID, slaveID, "off")
-                time.sleep(0.01)
-            if fe_power.get_fem_power_status(s.connection, portID, slaveID):
-                fe_power.set_fem_power(s.connection, portID, slaveID, "off")
-                time.sleep(0.01)
+        generic_set_sipm_bias(s, "off")
         if s.verbosity > 0:
-            logging.info("SiPM bias OFF & FEM OFF")
-    except:
-        logging.error(f"Error while turning SiPM and FEM OFF. ATTENTION!")
+            logging.info("SiPM bias OFF")
+    except Exception as e:
+        logging.error(f"ATTENTION! Error while turning SiPM OFF: {e}")
+
+    try:
+        generic_set_fem_bias(s, "off")
+        if s.verbosity > 0:
+            logging.info("FEM power OFF")
+    except Exception as e:
+        logging.error(f"ATTENTION! Error while turning FEM OFF: {e}")
 
     try:
         s.daemon.stop()
@@ -328,10 +345,7 @@ def generic_stop_acquisition(s: status) -> None:
     if s.verbosity > 0:
         logging.info(f"#### Stopping acquisition!!!")
     try:
-        for portID, slaveID in s.connection.getActiveFEBDs(): 
-            if fe_power.get_bias_power_status(s.connection, portID, slaveID):
-                fe_power.set_bias_power(s.connection, portID, slaveID, "off")
-                time.sleep(0.01)
+        generic_set_sipm_bias(s, "off")
         if s.verbosity > 0:
             logging.info("SiPM bias OFF")
         time.sleep(1)
@@ -378,7 +392,7 @@ def generic_acquisition_thread(s: status) -> None:
             generic_acquisition_publish_status(s, frames, wall_time, data_time, nEvents, nFramesLost)
 
         return progress_cb
-
+    
     s.connection.acquire(
         s.abcd_config["time"],
         0,
@@ -525,8 +539,8 @@ def publish_status(s: status):
             status_message["digitizer"]["valid_pointer"] = False
     except Exception as e:
         logging.error(f"Failed to check if DAQ daemon is running: {e}")
-        # return states.DIGITIZER_ERROR
-        return states.CONFIGURE_ERROR 
+        return states.DIGITIZER_ERROR
+        # return states.CONFIGURE_ERROR 
 
     # Publish the message using the generic publisher
     generic_publish_message(
@@ -536,8 +550,8 @@ def publish_status(s: status):
     )
 
     if not HowIsDAQD:
-        # return states.DIGITIZER_ERROR
-        return states.CONFIGURE_ERROR 
+        return states.DIGITIZER_ERROR
+        # return states.CONFIGURE_ERROR 
     else:
         if s.verbosity > 0:
             logging.info("Publish status\t\t-> OK\t-> RECEIVE_COMMANDS")
@@ -633,28 +647,26 @@ def start_acquisition(s: status):
         return states.DIGITIZER_ERROR
     
     try:
-        for portID, slaveID in s.connection.getActiveFEBDs(): 
-            fe_power.set_bias_power(s.connection, portID, slaveID, "on")
-            time.sleep(0.01)
+        generic_set_sipm_bias(s, "on")
         if s.verbosity > 0:
             logging.info("SiPM bias ON")
-    except:
-        logging.error(f"Error during turning SiPM bias on")
+    except Exception as e:
+        logging.error(f"Error during turning SiPM bias on: {e}")
         return states.DIGITIZER_ERROR
     
-    # try:
-    s.connection.openRawAcquisition(s.abcd_config["fileNamePrefix"])
-    # except:
-    #     logging.error(f"Error during opening raw acquisition. Check {s.abcd_config['fileNamePrefix']}")
-    #     return states.DIGITIZER_ERROR
+    try:
+        s.connection.openRawAcquisition(s.abcd_config["fileNamePrefix"])
+    except Exception as e:
+        logging.error(f"Error during opening raw acquisition: {e}")
+        return states.DIGITIZER_ERROR
     
     try:
         activeAsics = s.connection.getActiveAsics()
         activeChannels = [ (portID, slaveID, chipID, channelID) for channelID in range(64) for portID, slaveID, chipID in activeAsics ]
 
         asicsConfig = s.connection.getAsicsConfig()
-    except:
-        logging.error(f"Error retrieving active channels and asics configuration")
+    except Exception as e:
+        logging.error(f"Error retrieving active channels and asics configuration: {e}")
         return states.ACQUISITION_ERROR
 
     if getattr(s, "acquisition_thread", None) and s.acquisition_thread.is_alive():
@@ -720,9 +732,9 @@ def acquisition_receive_commands(s: status):
         else:
             logging.error(f"Recevied command: {command}. It is either unknown or not allowed during acquisition.")
 
-    return states.POOL_DIGITIZER
+    return states.POLL_DIGITIZER
 
-def pool_digitizer(s: status):
+def poll_digitizer(s: status):
 
     thread = getattr(s, "acquisition_thread", None)
 
@@ -926,16 +938,6 @@ def digitizer_error(s: status):
 
     generic_publish_message(s, defaults_abcd_events_topic, json_event_message)
 
-    try:
-        for portID, slaveID in s.connection.getActiveFEBDs():
-            if fe_power.get_bias_power_status(s.connection, portID, slaveID):
-                fe_power.set_bias_power(s.connection, portID, slaveID, "off")
-                time.sleep(0.01)
-        if s.verbosity > 0:
-            logging.info("SiPM bias OFF")
-    except:
-        logging.error(f"Error during turning SiPM bias off. ATTENTION!")
-
     if s.verbosity > 0:
         logging.info(f"Digitizer error\t\t-> OK\t-> DESTROY DIGITIZER")
 
@@ -951,14 +953,11 @@ def acquisition_error(s: status):
     generic_publish_message(s, defaults_abcd_events_topic, json_event_message)
 
     try:
-        for portID, slaveID in s.connection.getActiveFEBDs(): 
-            if fe_power.get_bias_power_status(s.connection, portID, slaveID):
-                fe_power.set_bias_power(s.connection, portID, slaveID, "off")
-                time.sleep(0.01)
+        generic_set_sipm_bias(s, "off")
         if s.verbosity > 0:
             logging.info("SiPM bias OFF")
-    except:
-        logging.error(f"Error during turning SiPM bias off. ATTENTION!")
+    except Exception as e:
+        logging.error(f"ATTENTION! Error during turning SiPM bias off: {e}")
 
     if s.verbosity > 0:
         logging.info(f"Acquisition error\t\t-> OK\t-> DESTROY DIGITIZER")
