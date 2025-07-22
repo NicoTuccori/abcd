@@ -832,12 +832,6 @@ def acquisition_receive_commands(s: status):
         else:
             logging.error(f"Recevied command: {command}. It is either unknown or not allowed during acquisition.")
 
-    # Check if we need to publish status due to timeout
-    # now = time.time()
-    # last_pub = s.last_publication
-    # if (now - last_pub) > defaults_abcd_publish_timeout:
-    #     return states.ACQUISITION_PUBLISH_STATUS
-    
     now = time.time()
     last_pub_temp = s.last_temp_publication
     if s.publish_temp and (now - last_pub_temp) > defaults_abcd_temp_publish_timeout:
@@ -923,46 +917,6 @@ def acquisition_publish_temperature(s: status):
     
     return states.ACQUISITION_RECEIVE_COMMANDS
 
-def acquisition_publish_status(s: status):
-
-    status_message = {
-        "config": json.loads(json.dumps(s.abcd_config)),
-        "acquisition": {
-            "running": True
-        },
-        "digitizer": {}  
-    }
-
-    HowIsDAQD = False
-    try:
-        HowIsDAQD = s.daemon.is_daqd_running()
-        if HowIsDAQD:
-            if s.verbosity > 0:
-                logging.info("DAQ daemon running.")
-            status_message["digitizer"]["valid_pointer"] = True
-            status_message["digitizer"]["active"] = True
-        else:
-            logging.error(f"Failed to find the DAQ daemon: HowIsDAQD = {HowIsDAQD}")
-            status_message["digitizer"]["valid_pointer"] = False
-    except Exception as e:
-        logging.error(f"Failed to check if DAQ daemon is running: {e}")
-        return states.DIGITIZER_ERROR
-        # return states.CONFIGURE_ERROR 
-
-    # Publish the message using the generic publisher
-    generic_publish_message(
-        s,
-        defaults_abcd_status_topic,
-        status_message
-    )
-
-    if not HowIsDAQD:
-        return states.DIGITIZER_ERROR
-        # return states.CONFIGURE_ERROR 
-    else:
-        if s.verbosity > 0:
-            logging.info("Acquisition publish status\t\t-> OK\t-> ACQUISITION_RECEIVE_COMMANDS")
-        return states.ACQUISITION_RECEIVE_COMMANDS
     
 #******************************************************************************/
 #* Sockets-specific actions                                                   */
