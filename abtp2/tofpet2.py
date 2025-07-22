@@ -128,7 +128,7 @@ if __name__ == '__main__':
 
         if terminate_flag:
 
-            if current_state == states.ACQUISITION_RECEIVE_COMMANDS or current_state == states.POOL_DIGITIZER:
+            if current_state == states.ACQUISITION_RECEIVE_COMMANDS or current_state == states.POLL_DIGITIZER:
                 current_state = states.STOP_ACQUISITION
                 current_state = current_state.act(global_status)
                 if global_status.verbosity > 0:

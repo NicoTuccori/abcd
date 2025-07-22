@@ -9,6 +9,7 @@ Python-version of standard ABCD actions
 """
 
 import zmq, json, time
+import numpy as np
 from datetime import datetime
 import logging
 import threading
@@ -199,7 +200,8 @@ def generic_check_and_load_config(s: status) -> bool:
         "paramTable",
         "waitOn",
         "portID",
-        "slaveID"
+        "slaveID",
+        "min_publish_interval",
     }
 
     # Check for missing keys
@@ -249,7 +251,7 @@ def generic_check_and_load_config(s: status) -> bool:
     
     return True
 
-def generic_configure_digitizer(s: status) -> bool:
+def generic_intialise_digitizer(s: status) -> bool:
 
     if s.verbosity > 0:
         logging.info("Initialising digitizer")
@@ -267,6 +269,9 @@ def generic_configure_digitizer(s: status) -> bool:
         logging.error(f"Failed to initialise system: {e}")
         return False
     
+    return True
+    
+def generic_get_temperature_sensors(s: status) -> bool:
     try:
         s.sensor_list = fe_temperature.get_sensor_list(s.connection, debug=s.verbosity)
         if not s.sensor_list:
@@ -276,10 +281,14 @@ def generic_configure_digitizer(s: status) -> bool:
             s.sensor_list.sort(key = lambda x:x.get_location())
             if s.verbosity > 0:
                 for sensor in s.sensor_list: 
-                    logging.info(f"Found temperature sensor at {sensor.get_location()}: {sensor.get_temperature()} ºC")
+                    logging.info(f"Found temperature sensor at {sensor.get_location()}: {np.round(sensor.get_temperature(),2)} ºC")
     except Exception as e:
         logging.error(f"Failed to get temperature sensors: {e}")
         return False
+    
+    return True
+
+def generic_configure_digitizer(s: status) -> bool:
 
     if s.verbosity > 0:
         logging.info("Configuring digitizer")
@@ -318,7 +327,6 @@ def generic_destroy_digitizer(s: status) -> None:
 
     if s.verbosity > 0:
         logging.info("Destroying digitizer")
-        logging.info("Shutting down DAQ daemon")
 
     try:
         generic_set_sipm_bias(s, "off")
@@ -334,6 +342,8 @@ def generic_destroy_digitizer(s: status) -> None:
     except Exception as e:
         logging.error(f"ATTENTION! Error while turning FEM OFF: {e}")
 
+    if s.verbosity > 0:
+        logging.info("Shutting down DAQ daemon")
     try:
         s.daemon.stop()
     except Exception as e:
@@ -345,6 +355,13 @@ def generic_stop_acquisition(s: status) -> None:
 
     if s.verbosity > 0:
         logging.info(f"#### Stopping acquisition!!!")
+
+    try:
+        s.connection.stopAcquisition()
+        time.sleep(3)
+    except Exception as e:
+        logging.error(f"Error during stop acquisition: {e}")
+
     try:
         generic_set_sipm_bias(s, "off")
         if s.verbosity > 0:
@@ -353,20 +370,15 @@ def generic_stop_acquisition(s: status) -> None:
     except Exception as e:
         logging.error(f"Error during turning SiPM bias off: {e}. ATTENTION!")
 
-    try:
-        s.connection.stopAcquisition()
-        time.sleep(1)
-    except Exception as e:
-        logging.error(f"Error during stop acquisition: {e}")
-
     # Record stop time and compute duration
     stop_time = time.time()
     delta_time = int(stop_time - s.start_time)
 
     s.stop_time = stop_time
+    s.publish_temp = False
 
     if s.verbosity > 0:
-        print(f"Run time: {delta_time}")
+        logging.info(f"Run time: {delta_time} s")
 
 def generic_acquisition_thread(s: status) -> None:
 
@@ -374,10 +386,15 @@ def generic_acquisition_thread(s: status) -> None:
         # throttle + dedup
         last_frames    = -1        # force first publish
         last_pub_wall  = -1.0
-        min_interval   = getattr(s, "status_pub_interval", 1.0)  # seconds
+        min_interval   = s.abcd_config["min_publish_interval"]
 
         def progress_cb(frames, wall_time, data_time, nEvents, nFramesLost):
             nonlocal last_frames, last_pub_wall
+
+            logging.info(f"Progress: {frames} frames, {wall_time} s, {data_time} s, {nEvents} events, {nFramesLost} frames lost")
+
+            s.partial_counts += nEvents * (frames - last_frames)
+            s.counts += nEvents * (frames - last_frames)
 
             # guard: frames must advance
             if frames <= last_frames:
@@ -387,10 +404,11 @@ def generic_acquisition_thread(s: status) -> None:
             if last_pub_wall >= 0 and (wall_time - last_pub_wall) < min_interval:
                 return
 
+            generic_acquisition_publish_status(s, frames, wall_time, data_time, nEvents, nFramesLost)
+
             last_frames   = frames
             last_pub_wall = wall_time
-
-            generic_acquisition_publish_status(s, frames, wall_time, data_time, nEvents, nFramesLost)
+            s.partial_counts = 0
 
         return progress_cb
     
@@ -403,12 +421,13 @@ def generic_acquisition_thread(s: status) -> None:
 
 def generic_acquisition_publish_status(s: status, frames, wall_time, data_time, nEvents, nFramesLost) -> None:
     
-    status_message = {}
-
-    status_message["config"] = s.abcd_config
-
-    status_message["digitizer"] = {}
-    status_message["acquisition"] = {}
+    status_message = {
+        "config": json.loads(json.dumps(s.abcd_config)),
+        "acquisition": {
+            "running": True
+        },
+        "digitizer": {}  
+    }
 
     HowIsDAQD = False
     HowIsDAQD = s.daemon.is_daqd_running()
@@ -434,16 +453,15 @@ def generic_acquisition_publish_status(s: status, frames, wall_time, data_time, 
         pubtime = pub_delta if pub_delta and pub_delta > 0 else 1e-3  # avoid division by zero
 
         # Fill in acquisition progress from callback arguments
-        status_message["acquisition"]["frames"] = frames
-        status_message["acquisition"]["events"] = nEvents
-        status_message["acquisition"]["frames_lost"] = nFramesLost
-        status_message["acquisition"]["wall_time"] = wall_time
-        status_message["acquisition"]["data_time"] = data_time
-        status_message["acquisition"]["delay"] = (wall_time - data_time) if (wall_time is not None and data_time is not None) else None
+        status_message["acquisition"]["rates"] = [s.partial_counts / pubtime]
+        status_message["acquisition"]["ICR_rates"] = [s.partial_counts / pubtime]
 
-    # Debugging
-    if s.verbosity > 0:
-        logging.debug(f"Publishing status message: {status_message}")
+        status_message["acquisition"]["counts"] = [s.counts]
+        status_message["acquisition"]["ICR_counts"] = [s.counts]
+        # status_message["acquisition"]["frames_lost"] = nFramesLost
+        # status_message["acquisition"]["wall_time"] = wall_time
+        # status_message["acquisition"]["data_time"] = data_time
+        # status_message["acquisition"]["delay"] = (wall_time - data_time) if (wall_time is not None and data_time is not None) else None
 
     # Publish the message over ZMQ or your messaging system
     generic_publish_message(s, defaults_abcd_status_topic, status_message)
@@ -454,15 +472,15 @@ def generic_publish_temperature(s: status) -> bool:
     try:
         for sensor in s.sensor_list:
             portID, slaveID, moduleID, sensorID, sensorPlace = sensor.get_location()
-            sensor_16bit = encode_temp_sensor(portID, slaveID, moduleID, sensorID, sensorPlace)
+            # sensor_16bit = encode_temp_sensor(portID, slaveID, moduleID, sensorID, sensorPlace)
             temp = int(sensor.get_temperature()*100)
-            s.add_event(s.events_buffer, 
-                        timestamp=timestamp, 
-                        qshort=temp, 
-                        qlong=0, 
-                        baseline=sensor_16bit, 
-                        channel=0, 
-                        group_counter=0)
+            # s.add_event(s.events_buffer, 
+            #             timestamp=timestamp, 
+            #             qshort=temp, 
+            #             qlong=0, 
+            #             baseline=sensor_16bit, 
+            #             channel=0, 
+            #             group_counter=0)
     except Exception as e:
         logging.error(f"Failed to fill event buffer with temperature: {e}")
         return False
@@ -505,13 +523,19 @@ def create_digitizer(s: status):
     # Call the digitizer creation logic
     success = generic_create_digitizer(s)
 
+    if not success:
+        logging.error("Digitizer creation failed")
+        return states.DIGITIZER_ERROR
+    
+    success = generic_intialise_digitizer(s)
+
     if success:
         if s.verbosity > 0:
             logging.info("Create digitizer\t\t-> OK\t-> CONFIGURE_DIGITIZER")
         # time.sleep(20)
         return states.CONFIGURE_DIGITIZER
     else:
-        logging.error("Digitizer creation failed")
+        logging.error("Digitizer initialisation failed")
         return states.DIGITIZER_ERROR
     
 def destroy_digitizer(s: status):
@@ -537,13 +561,19 @@ def configure_digitizer(s: status):
 
     success = generic_configure_digitizer(s)
 
+    if not success:
+        logging.error("Configure digitizer failed")
+        return states.CONFIGURE_ERROR
+    
+    success = generic_get_temperature_sensors(s)
+
     if success:
         if s.verbosity > 0:
             logging.info("Configure digitizer\t-> OK\t-> PUBLISH_STATUS")
-        return states.PUBLISH_STATUS
     else:
-        logging.error("Configure digitizer failed")
-        return states.CONFIGURE_ERROR
+        logging.error("Failed to get temperature sensors")
+
+    return states.PUBLISH_STATUS
 
 def publish_status(s: status):
 
@@ -802,10 +832,16 @@ def acquisition_receive_commands(s: status):
         else:
             logging.error(f"Recevied command: {command}. It is either unknown or not allowed during acquisition.")
 
+    # Check if we need to publish status due to timeout
+    # now = time.time()
+    # last_pub = s.last_publication
+    # if (now - last_pub) > defaults_abcd_publish_timeout:
+    #     return states.ACQUISITION_PUBLISH_STATUS
+    
     now = time.time()
     last_pub_temp = s.last_temp_publication
     if s.publish_temp and (now - last_pub_temp) > defaults_abcd_temp_publish_timeout:
-        return states.PUBLISH_TEMPERATURE
+        return states.ACQUISITION_PUBLISH_TEMPERATURE
 
     return states.POLL_DIGITIZER
 
@@ -866,7 +902,7 @@ def publish_temperature(s: status):
 
 def acquisition_publish_temperature(s: status):
 
-    success = generic_publish_temperature(s)
+    success = True #generic_publish_temperature(s)
 
     if not success:
         logging.error("Failed to read and publish temperature")
@@ -874,19 +910,60 @@ def acquisition_publish_temperature(s: status):
         return states.ACQUISITION_RECEIVE_COMMANDS
     
     # From read_temperature_sensors of petsys_util
-    try:
-        with open(s.abcd_config["fileNamePrefix"] + "_temperature.tsv", "a") as fd:
-            fd.write("%d\t%d" %(s.connection.getCurrentTimeTag(), time.time()))
-            for sensor in s.sensor_list:
-                temp = sensor.get_temperature()
-                fd.write("\t%.2f" % temp)
-            fd.write("\n")
-            fd.flush()
-    except Exception as e:
-        logging.error(f"Failed to write temperature to file: {e}")
+    # try:
+    #     with open(s.abcd_config["fileNamePrefix"] + "_temperature.tsv", "a") as fd:
+    #         fd.write("%d\t%d" %(s.connection.getCurrentTimeTag(), time.time()))
+    #         for sensor in s.sensor_list:
+    #             temp = sensor.get_temperature()
+    #             fd.write("\t%.2f" % temp)
+    #         fd.write("\n")
+    #         fd.flush()
+    # except Exception as e:
+    #     logging.error(f"Failed to write temperature to file: {e}")
     
     return states.ACQUISITION_RECEIVE_COMMANDS
 
+def acquisition_publish_status(s: status):
+
+    status_message = {
+        "config": json.loads(json.dumps(s.abcd_config)),
+        "acquisition": {
+            "running": True
+        },
+        "digitizer": {}  
+    }
+
+    HowIsDAQD = False
+    try:
+        HowIsDAQD = s.daemon.is_daqd_running()
+        if HowIsDAQD:
+            if s.verbosity > 0:
+                logging.info("DAQ daemon running.")
+            status_message["digitizer"]["valid_pointer"] = True
+            status_message["digitizer"]["active"] = True
+        else:
+            logging.error(f"Failed to find the DAQ daemon: HowIsDAQD = {HowIsDAQD}")
+            status_message["digitizer"]["valid_pointer"] = False
+    except Exception as e:
+        logging.error(f"Failed to check if DAQ daemon is running: {e}")
+        return states.DIGITIZER_ERROR
+        # return states.CONFIGURE_ERROR 
+
+    # Publish the message using the generic publisher
+    generic_publish_message(
+        s,
+        defaults_abcd_status_topic,
+        status_message
+    )
+
+    if not HowIsDAQD:
+        return states.DIGITIZER_ERROR
+        # return states.CONFIGURE_ERROR 
+    else:
+        if s.verbosity > 0:
+            logging.info("Acquisition publish status\t\t-> OK\t-> ACQUISITION_RECEIVE_COMMANDS")
+        return states.ACQUISITION_RECEIVE_COMMANDS
+    
 #******************************************************************************/
 #* Sockets-specific actions                                                   */
 #******************************************************************************/

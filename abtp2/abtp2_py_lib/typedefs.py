@@ -102,25 +102,34 @@ class daqd_daemon:
     def is_daqd_running(self):
         return bool(self.get_daqd_pids())
 
-    def stop(self):
-        """
-        Ask the daemon to exit (via SIGINT) and wait for it to die.
-        """
-        if self.proc.poll() is None:
-            self.proc.send_signal(subprocess.signal.SIGINT)
+    def stop(self, *, timeout=5.0, force=False):
+        if not self.proc or self.proc.poll() is not None:
+            return
+        if not force:
+            self.proc.terminate()  # SIGTERM -> catchUserStop -> graceful cleanup
             try:
-                self.proc.wait(timeout=2.0)
+                self.proc.wait(timeout=timeout)
+                return
             except subprocess.TimeoutExpired:
-                self.proc.kill()
+                pass
+        # force kill
+        self.proc.kill()
+        self.proc.wait(timeout=timeout if timeout else None)
 
     def __enter__(self):
         return self
 
-    def __exit__(self):
-        self.stop()
+    def __exit__(self, exc_type, exc, tb):
+        # Auto-stop unless user asked to keep running
+        if self.autostop:
+            self.stop()
 
     def __del__(self):
-        self.stop()
+        if getattr(self, "autostop", True):
+            try:
+                self.stop()
+            except Exception:
+                pass
 
 @dataclass
 class status:
@@ -159,6 +168,8 @@ class status:
     # ABCD events buffer
     events_buffer: bytearray = field(default_factory=bytearray)
     events_buffer_max_size: int = 1024
+    partial_counts: int = 0
+    counts: int = 0
 
     retval: int = -1
     client_socket: int = -1

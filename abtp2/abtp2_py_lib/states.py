@@ -26,14 +26,14 @@ CONFIGURE_DIGITIZER =           state(107, "Configure digitizer",           acti
 
 RECEIVE_COMMANDS =              state(201, "Receive commands",              actions.receive_commands)
 PUBLISH_STATUS =                state(202, "Publish status",                actions.publish_status)
-START_ACQUISITION =             state(203, "Start acquisition",             actions.start_acquisition)
-STOP_ACQUISITION =              state(204, "Stop acquisition",              actions.stop_acquisition)
+PUBLISH_TEMPERATURE =           state(203, "Read and publish temperature",  actions.publish_temperature)
+START_ACQUISITION =             state(204, "Start acquisition",             actions.start_acquisition)
+STOP_ACQUISITION =              state(205, "Stop acquisition",              actions.stop_acquisition)
 
 ACQUISITION_RECEIVE_COMMANDS =  state(301, "Acquisition receive commands",  actions.acquisition_receive_commands)
 POLL_DIGITIZER =                state(302, "Poll digitizer thread",         actions.poll_digitizer)
-PUBLISH_TEMPERATURE =           state(303, "Read and publish temperature",  actions.publish_temperature)
-# PUBLISH_EVENTS =                state(304, "Publish events",                actions.publish_events)
-ACQUISITION_PUBLISH_TEMPERATURE = state(305, "Acquisition publish temperature",    actions.acquisition_publish_temperature)
+ACQUISITION_PUBLISH_STATUS =     state(303, "Acquisition publish status",     actions.acquisition_publish_status)
+ACQUISITION_PUBLISH_TEMPERATURE = state(304, "Acquisition publish temperature",    actions.acquisition_publish_temperature)
 # STOP_PUBLISH_EVENTS =           state(306, "Publish events (stop)",         actions.stop_publish_events)
 # CONTINUE_ACQUISITION =          state(307, "Continue acquisition",          actions.continue_acquisition)
 # TRIGGER_RECONFIGURATION =       state(308, "Trigger reconfiguration",       actions.trigger_reconfiguration)
@@ -66,9 +66,9 @@ states = [
     CREATE_DIGITIZER, CONFIGURE_DIGITIZER,
     # RECREATE_DIGITIZER, ALLOCATE_MEMORY,
     # RECONFIGURE_CLEAR_MEMORY, RECONFIGURE_DESTROY_DIGITIZER,
-    RECEIVE_COMMANDS, PUBLISH_STATUS, START_ACQUISITION, STOP_ACQUISITION,
-    ACQUISITION_RECEIVE_COMMANDS, POLL_DIGITIZER, PUBLISH_TEMPERATURE, ACQUISITION_PUBLISH_TEMPERATURE,
-    # ACQUISITION_PUBLISH_STATUS, STOP_PUBLISH_EVENTS, CONTINUE_ACQUISITION,
+    RECEIVE_COMMANDS, PUBLISH_STATUS, START_ACQUISITION, STOP_ACQUISITION, PUBLISH_TEMPERATURE,
+    ACQUISITION_RECEIVE_COMMANDS, POLL_DIGITIZER, ACQUISITION_PUBLISH_STATUS, ACQUISITION_PUBLISH_TEMPERATURE,
+    # STOP_PUBLISH_EVENTS, CONTINUE_ACQUISITION,
     # TRIGGER_RECONFIGURATION, RESTART_PUBLISH_EVENTS, RESTART_STOP_ACQUISITION,
     # RESTART_CLEAR_MEMORY, RESTART_DESTROY_DIGITIZER, RESTART_CREATE_DIGITIZER,
     # RESTART_CONFIGURE_DIGITIZER, RESTART_ALLOCATE_MEMORY,
