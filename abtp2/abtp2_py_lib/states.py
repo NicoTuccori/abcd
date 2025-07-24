@@ -32,7 +32,7 @@ STOP_ACQUISITION =              state(205, "Stop acquisition",              acti
 
 ACQUISITION_RECEIVE_COMMANDS =  state(301, "Acquisition receive commands",  actions.acquisition_receive_commands)
 POLL_DIGITIZER =                state(302, "Poll digitizer thread",         actions.poll_digitizer)
-ACQUISITION_PUBLISH_STATUS =     state(303, "Acquisition publish status",     actions.acquisition_publish_status)
+# ACQUISITION_PUBLISH_STATUS =     state(303, "Acquisition publish status",     actions.acquisition_publish_status)
 ACQUISITION_PUBLISH_TEMPERATURE = state(304, "Acquisition publish temperature",    actions.acquisition_publish_temperature)
 # STOP_PUBLISH_EVENTS =           state(306, "Publish events (stop)",         actions.stop_publish_events)
 # CONTINUE_ACQUISITION =          state(307, "Continue acquisition",          actions.continue_acquisition)
@@ -67,7 +67,7 @@ states = [
     # RECREATE_DIGITIZER, ALLOCATE_MEMORY,
     # RECONFIGURE_CLEAR_MEMORY, RECONFIGURE_DESTROY_DIGITIZER,
     RECEIVE_COMMANDS, PUBLISH_STATUS, START_ACQUISITION, STOP_ACQUISITION, PUBLISH_TEMPERATURE,
-    ACQUISITION_RECEIVE_COMMANDS, POLL_DIGITIZER, ACQUISITION_PUBLISH_STATUS, ACQUISITION_PUBLISH_TEMPERATURE,
+    ACQUISITION_RECEIVE_COMMANDS, POLL_DIGITIZER, ACQUISITION_PUBLISH_TEMPERATURE,
     # STOP_PUBLISH_EVENTS, CONTINUE_ACQUISITION,
     # TRIGGER_RECONFIGURATION, RESTART_PUBLISH_EVENTS, RESTART_STOP_ACQUISITION,
     # RESTART_CLEAR_MEMORY, RESTART_DESTROY_DIGITIZER, RESTART_CREATE_DIGITIZER,

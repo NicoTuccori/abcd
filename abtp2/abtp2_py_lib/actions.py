@@ -384,31 +384,54 @@ def generic_acquisition_thread(s: status) -> None:
 
     def _make_progress_cb(s):
         # throttle + dedup
-        last_frames    = -1        # force first publish
+        last_totalFrames    = -1        
+        last_totalFrames_publish    = -1        # force first publish
         last_pub_wall  = -1.0
+        last_pub_wall_publish  = -1.0
         min_interval   = s.abcd_config["min_publish_interval"]
+        n=0
 
-        def progress_cb(frames, wall_time, data_time, nEvents, nFramesLost):
-            nonlocal last_frames, last_pub_wall
+        def progress_cb(totalFrames, wall_time, blockFrames, blockEvents, blockFramesLost):
+            nonlocal last_totalFrames, last_totalFrames_publish, last_pub_wall, last_pub_wall_publish, n
 
-            logging.info(f"Progress: {frames} frames, {wall_time} s, {data_time} s, {nEvents} events, {nFramesLost} frames lost")
+            avg_events = blockEvents / blockFrames if blockFrames else 0
+            frame_delta = totalFrames - last_totalFrames
+            extrapolated_events = avg_events * frame_delta
+            elapsed_time = wall_time - last_pub_wall
+            rate = extrapolated_events / elapsed_time if elapsed_time else 0
 
-            s.partial_counts += nEvents * (frames - last_frames)
-            s.counts += nEvents * (frames - last_frames)
+            # logging.info(
+            #     f"Total frames since last publication: {frame_delta}\n"
+            #     f"Frames processed: {blockFrames}\n"
+            #     f"Events in processed frames: {blockEvents}\n"
+            #     f"Avg events per frame: {avg_events:.2f}\n"
+            #     f"Extrapolated events in all frames: {extrapolated_events:.2f}\n"
+            #     f"Wall time: {wall_time:.2f}s\n"
+            #     f"Extrapolated rate: {rate:.2f} events/s"
+            # )
+
+            s.partial_counts += rate
+            s.counts += extrapolated_events
+
+            last_totalFrames = totalFrames
+            last_pub_wall = wall_time
+            n += 1
 
             # guard: frames must advance
-            if frames <= last_frames:
+            if totalFrames <= last_totalFrames_publish:
                 return
 
             # guard: time throttle
-            if last_pub_wall >= 0 and (wall_time - last_pub_wall) < min_interval:
+            if last_pub_wall_publish >= 0 and (wall_time - last_pub_wall_publish) < min_interval:
                 return
 
-            generic_acquisition_publish_status(s, frames, wall_time, data_time, nEvents, nFramesLost)
+            s.partial_counts = s.partial_counts / n
+            generic_acquisition_publish_status(s)
 
-            last_frames   = frames
-            last_pub_wall = wall_time
+            last_totalFrames_publish   = totalFrames
+            last_pub_wall_publish = wall_time
             s.partial_counts = 0
+            n=0
 
         return progress_cb
     
@@ -419,7 +442,7 @@ def generic_acquisition_thread(s: status) -> None:
         progress_callback=_make_progress_cb(s)
     )
 
-def generic_acquisition_publish_status(s: status, frames, wall_time, data_time, nEvents, nFramesLost) -> None:
+def generic_acquisition_publish_status(s: status) -> None:
     
     status_message = {
         "config": json.loads(json.dumps(s.abcd_config)),
@@ -453,8 +476,8 @@ def generic_acquisition_publish_status(s: status, frames, wall_time, data_time, 
         pubtime = pub_delta if pub_delta and pub_delta > 0 else 1e-3  # avoid division by zero
 
         # Fill in acquisition progress from callback arguments
-        status_message["acquisition"]["rates"] = [s.partial_counts / pubtime]
-        status_message["acquisition"]["ICR_rates"] = [s.partial_counts / pubtime]
+        status_message["acquisition"]["rates"] = [s.partial_counts]
+        status_message["acquisition"]["ICR_rates"] = [s.partial_counts]
 
         status_message["acquisition"]["counts"] = [s.counts]
         status_message["acquisition"]["ICR_counts"] = [s.counts]
@@ -754,8 +777,19 @@ def start_acquisition(s: status):
         # TO DO FOR PARAM SCANS
         True
 
-    if s.verbosity > 0:
-        logging.info("Copying config file")
+    # Check thread is alive
+    if not getattr(s, "acquisition_thread", None) or not s.acquisition_thread.is_alive():
+        logging.error("Acquisition thread failed to start")
+        return states.ACQUISITION_ERROR
+    else:
+        if s.verbosity > 0:
+            # print(s.acquisition_thread.is_alive())
+            # print(s.acquisition_thread)
+            logging.info("Acquisition thread started")
+    
+
+    # if s.verbosity > 0:
+    #     logging.info("Copying config file")
     
     # # Copy config files
     # shutil.copyfile(s.working_folder + "/abcd_config.tsv", s.working_folder + "/" + s.fileNamePrefix + "_abcd_config.tsv")
@@ -833,8 +867,7 @@ def acquisition_receive_commands(s: status):
             logging.error(f"Recevied command: {command}. It is either unknown or not allowed during acquisition.")
 
     now = time.time()
-    last_pub_temp = s.last_temp_publication
-    if s.publish_temp and (now - last_pub_temp) > defaults_abcd_temp_publish_timeout:
+    if s.publish_temp and (now - s.last_temp_publication) > defaults_abcd_temp_publish_timeout:
         return states.ACQUISITION_PUBLISH_TEMPERATURE
 
     return states.POLL_DIGITIZER
@@ -914,6 +947,8 @@ def acquisition_publish_temperature(s: status):
     #         fd.flush()
     # except Exception as e:
     #     logging.error(f"Failed to write temperature to file: {e}")
+
+    s.last_temp_publication = time.time()
     
     return states.ACQUISITION_RECEIVE_COMMANDS
 

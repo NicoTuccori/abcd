@@ -40,6 +40,12 @@ def signal_handler(signum, frame):
 
 if __name__ == '__main__':
 
+    # Check if python environment is activated
+    if 'abtp2py' not in sys.executable:
+        print("Please activate abtp2py environment.")
+        print("Run 'source abtp2py/bin/activate'")
+        sys.exit(1)
+
     # Splash screen
     print()
     print("==========================================================")
