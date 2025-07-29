@@ -181,6 +181,18 @@ button.abcd_start:before {
     margin-right: 1ex;
 }
 
+button.abtp2_get_temperature:before {
+    content: "\e1ff";
+    font-family: "Material Icons";
+    margin-right: 1ex;
+}
+
+button.abtp2_calibrate:before {
+    content: "\e8b6";
+    font-family: "Material Icons";
+    margin-right: 1ex;
+}
+
 button.abcd_stop:before {
     content: "\e53a";
     font-family: "Material Icons";

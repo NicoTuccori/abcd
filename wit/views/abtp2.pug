@@ -1,0 +1,51 @@
+extends layout
+
+block content
+  script(src='/static/javascripts/abtp2.js')
+  script(src='/ace/ace.js' type="text/javascript" charset="utf-8")
+
+  h2 Digitizer interface
+  div.columns
+    div.column
+      div.display 
+        h3 Controls
+        p
+          button.abcd_start(id="button_start") Start
+          button.abcd_stop(id="button_stop") Stop
+        p
+          button.abtp2_get_temperature(id="button_temperature") Monitor Temperature
+        p
+          button.abtp2_calibrate(id="button_calibration") Perform calibration
+      div.display 
+        h3 Status
+        div#module_status
+    div.column
+      div.display 
+        h3 Digitizer configuration
+        fieldset
+          legend Configuration controls
+          button(id="button_config_send") Send configuration
+          button(id="button_config_get") Get configuration
+          button(id="button_config_download") Download configuration
+          button(id="button_config_upload") Upload from file
+          input(type="file" id="input_config_file" hidden)
+          button(id="button_config_store") Store running configuration
+        p
+          div#online_editor
+  div.display 
+    h3 Events log
+    div#events_log.scrollable
+  div.columns
+    div.column
+      div.display 
+        h3 Connection status
+        p #[strong Computer hostname:] #{hostname}
+        p #[strong Name:] #{name} of type #{type}
+        p #[strong Webserver connection:] #[span#wit_connection_status.unknown_status No connection]
+        p #[strong Module connection:] #[span#module_connection_status.unknown_status No connection]
+    div.column
+      div.display 
+        h3 User interface settings
+        p
+          label Expiration time [s]:
+            input(type="number" id="time_expiration" value="10")

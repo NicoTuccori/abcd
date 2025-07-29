@@ -1,4 +1,9 @@
 - instead of using config.ini file, define settings in abcd_config.
-    - probably needs to define a function in config.py 
+    - probably needs to define a function in config.py
+
+- how to get temperature data?
+    - modify daqd.py as in sussex_petsys?
+    - create a new module that retrieve the temperature from sensors?
+    - can multiple daqd.connection() be established? do they clash? what happen if i run acquire_sipm_data and read_temperature_sensors?
 
 - Create a spec module to display temperature over time

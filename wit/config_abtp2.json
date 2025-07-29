@@ -1,0 +1,29 @@
+{
+    "verbosity": 1,
+    "heartbeat": 1000,
+    "modules": [
+    {
+        "name": "digitizer_interface",
+        "type": "abtp2",
+        "description": "Digitizer interface",
+        "sockets": [
+        {
+            "type": "status",
+            "address": "tcp://127.0.0.1:16180",
+            "topic": "status_abcd"
+        },
+        {
+            "type": "events",
+            "address": "tcp://127.0.0.1:16180",
+            "topic": "events_abcd"
+        },
+        {
+            "type": "commands",
+            "address": "tcp://127.0.0.1:16182"
+        },
+        {}
+        ],
+        "zzz": null
+    },
+    {}]
+}

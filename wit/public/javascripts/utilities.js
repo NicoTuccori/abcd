@@ -216,10 +216,10 @@ function send_store_config(socket_io, confirmation_expiration) {
     let timestamp_last_send = dayjs().add(-2 * confirmation_expiration, "minutes");
 
     return function(status) {
-        if (_.isNil(status["config_file"])) {
+        if (_.isNil(status["abcd_config_file"])) {
             alert("ERROR: No configuration filename, this module probably does not support this function");
         } else {
-            const config_filename = status["config_file"];
+            const config_filename = status["abcd_config_file"];
 
             const now = dayjs();
             const difference = now.diff(timestamp_last_send, "minutes");
