@@ -207,9 +207,6 @@ function page_loaded() {
             };
         }
     }
-
-
-    
     
     function abtp2_arguments_calibration() {
         try {
@@ -238,7 +235,7 @@ function page_loaded() {
             if (confirmed) {
                 return kwargs;
             } else {
-                return;
+                return null;
             }
 
         } catch (error) {
@@ -248,6 +245,23 @@ function page_loaded() {
         }
     }
 
+    function abtp2_message_start() {
+        const message = `Start acquisitition.\nContinue?`;
+        confirmed = confirm(message);
+        return confirmed;
+    }
+
+    function abtp2_message_stop() {
+        const message = `Stop acquisitition.\nContinue?`;
+        confirmed = confirm(message);
+        return confirmed;
+    }
+
+    function abtp2_message_temperature() {
+        const message = `Monitoring temperature.\nCheck the temperature display in the spect module.`;
+        confirm(message);
+    }
+
 
     socket_io.on("connect", socket_io_connection(socket_io, module_name, on_status, update_events_log(), null));
 
@@ -255,10 +269,20 @@ function page_loaded() {
         connection_checker.display();
     }, 1000);
 
-    $("#button_start").on("click", send_command(socket_io, 'start'));
-    $("#button_stop").on("click", send_command(socket_io, 'stop'));
-    $("#button_temperature").on("click", send_command(socket_io, 'get_temperature'));
-    $("#button_calibration").on("click", send_command(socket_io, 'calibrate', abtp2_arguments_calibration));
+    $("#button_start").on("click", function() {
+        if (abtp2_message_start()) send_command(socket_io, 'start');
+    });
+    $("#button_stop").on("click", function() {
+        if (abtp2_message_stop()) send_command(socket_io, 'stop');
+    });
+    $("#button_temperature").on("click", function() {
+        abtp2_message_temperature();
+        send_command(socket_io, 'get_temperature');
+    })
+    $("#button_calibration").on("click", function() {
+        kwargs = abtp2_arguments_calibration();
+        if (!_.isNil(kwargs)) send_command(socket_io, 'calibrate', kwargs);
+    });
 
     $("#button_config_send").on("click", send_command(socket_io, 'reconfigure', abcd_arguments_config));
     $("#button_config_get").on("click", abcd_get_config);

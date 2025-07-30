@@ -501,7 +501,7 @@ def generic_publish_temperature(s: status) -> bool:
             portID, slaveID, moduleID, sensorID, sensorPlace = sensor.get_location()
             sensor_16bit = encode_temp_sensor(portID, slaveID, moduleID, sensorID, sensorPlace)
             temp = int(sensor.get_temperature()*100)
-            logging.info(f"Found temperature sensor at {sensor.get_location()}\tID: {sensor_16bit}, temp: {round(sensor.get_temperature(),2)} ºC")
+            logging.info(f"Found temperature sensor at ({portID, slaveID, moduleID, sensorID, sensorPlace})\tID: {sensor_16bit}, temp: {round(temp/100,2)} ºC")
             s.add_event(timestamp=timestamp, 
                         qshort=temp, 
                         qlong=0, 
