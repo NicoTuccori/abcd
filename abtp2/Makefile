@@ -7,6 +7,7 @@ PWD := $(shell pwd)
 PETSYS_DIR := /home/petsys/sw_daq_tofpet2_abcd
 SRC_PETSYS = $(PETSYS_DIR)/src
 SRC_PETSYS_LIB = $(SRC_PETSYS)/petsys_py_lib
+SRC_PETSYS_UTILITIES = $(SRC_PETSYS)/petsys_util
 SRC_PETSYS_RAW = $(SRC_PETSYS)/raw_data
 SRC_PETSYS_DAQD = $(SRC_PETSYS)/daqd
 SHM_SRC = $(SRC_PETSYS_RAW)/shm_raw.cpp $(SRC_PETSYS_RAW)/shm_raw_py.cpp
@@ -32,6 +33,11 @@ PETSYS_PY_LIB = \
 	spi.py i2c.py bias.py boot.py fe_temperature.py fe_eeprom.py fe_power.py \
 	fe_power_8k.py # meta.py
 
+PETSYS_UTILITIES = \
+	acquire_threshold_calibration process_threshold_calibration \
+# 	acquire_tdc_calibration process_tdc_calibration \
+# 	acquire_qdc_calibration process_qdc_calibration 
+
 # Directory creation target
 PETSYS_DEST = $(PWD)/abtp2_py_lib/petsys_lib
 $(PETSYS_DEST):
@@ -46,7 +52,11 @@ $(PETSYS_DEST):
 $(PETSYS_DEST)/%: $(SRC_PETSYS_LIB)/% | $(PETSYS_DEST)
 	cp $< $@
 
+$(PETSYS_DEST)/%: $(SRC_PETSYS_UTILITIES)/% | $(PETSYS_DEST)
+	cp $< $@
+
 PY_SCRIPTS_DST := $(addprefix $(PETSYS_DEST)/, $(PETSYS_PY_LIB))
+UTILITIES_DST := $(addprefix $(PETSYS_DEST)/, $(PETSYS_UTILITIES))
 
 # C++ module
 SHM_SRC = $(SRC_PETSYS_RAW)/shm_raw.cpp $(SRC_PETSYS_RAW)/shm_raw_py.cpp
@@ -85,7 +95,7 @@ $(WRITERAW_OUT):
 
 all: venv petsys_copy $(SHM_OUT) $(DAQD_OUT) $(WRITERAW_OUT)
 
-petsys_copy: $(PY_SCRIPTS_DST)
+petsys_copy: $(PY_SCRIPTS_DST) $(UTILITIES_DST)
 
 venv:
 	@if [ -z "$$VIRTUAL_ENV" ]; then \

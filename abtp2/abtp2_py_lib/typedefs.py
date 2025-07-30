@@ -165,6 +165,9 @@ class status:
     # PETsys temperature
     sensor_list: List[Any] = field(default_factory=list)
 
+    # PETsys calibration
+    calibrationOptions: List[Any] = field(default_factory=list)
+
     # ABCD events buffer
     events_buffer: bytearray = field(default_factory=bytearray)
     events_buffer_max_size: int = 1024

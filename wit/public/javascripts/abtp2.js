@@ -208,6 +208,47 @@ function page_loaded() {
         }
     }
 
+
+    
+    
+    function abtp2_arguments_calibration() {
+        try {
+            const checkedOptions = [];
+
+            ["disc", "tdc", "qdc"].forEach(id => {
+                const checkbox = document.getElementById(id);
+                if (checkbox && checkbox.checked) {
+                    checkedOptions.push(checkbox.value);
+                }
+            });
+
+
+            if (checkedOptions.length === 0) {
+                alert("Please select at least one option before proceeding with calibration.");
+                return;
+            }
+
+
+            const kwargs = { options: checkedOptions };
+
+            
+            const message = `You selected: ${checkedOptions.join(", ")}.\n\nProceed with calibration?`;
+            const confirmed = confirm(message);
+
+            if (confirmed) {
+                return kwargs;
+            } else {
+                return;
+            }
+
+        } catch (error) {
+            console.error(`ERROR: ${error}`);
+            alert(`ERROR: Unable to collect calibration options due to:\n${error}`);
+            return null;
+        }
+    }
+
+
     socket_io.on("connect", socket_io_connection(socket_io, module_name, on_status, update_events_log(), null));
 
     window.setInterval(function () {
@@ -217,7 +258,7 @@ function page_loaded() {
     $("#button_start").on("click", send_command(socket_io, 'start'));
     $("#button_stop").on("click", send_command(socket_io, 'stop'));
     $("#button_temperature").on("click", send_command(socket_io, 'get_temperature'));
-    $("#button_calibration").on("click", send_command(socket_io, 'calibrate'));
+    $("#button_calibration").on("click", send_command(socket_io, 'calibrate', abtp2_arguments_calibration));
 
     $("#button_config_send").on("click", send_command(socket_io, 'reconfigure', abcd_arguments_config));
     $("#button_config_get").on("click", abcd_get_config);
