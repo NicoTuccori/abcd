@@ -11,6 +11,7 @@ Python-version of standard ABCD types
 from dataclasses import dataclass, field
 from typing import Callable, List, Any, Optional, Dict
 import time
+from .timeseries import TimeSeries
 
 class PlotType:
     ABTP2_TEMPERATURE = 0
@@ -43,10 +44,16 @@ class status:
 
     plot_type: int = PlotType.ABTP2_TEMPERATURE
 
+    start_timestamp: Optional[float] = None
     active_channels: List[int] = field(default_factory=list)
+    channel_labels: List[int] = field(default_factory=list)
+    plots_t: List[TimeSeries] = field(default_factory=list)
     
     counts_partial: Dict[int, int] = field(default_factory=dict)
     counts: Dict[int, int] = field(default_factory=dict)
+
+    def update_timestamp(self):
+        self.last_publication = time.time()
 
 # Equivalent to C++ struct state
 action = Callable[[status], Any]

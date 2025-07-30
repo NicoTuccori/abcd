@@ -20,6 +20,8 @@ READ_CONFIG =                   state(104, "Read configuration",            acti
 
 RECEIVE_COMMANDS =              state(201, "Receive commands",              actions.receive_commands)
 PUBLISH_STATUS =                state(202, "Publish status",                actions.publish_status)
+READ_SOCKET =                   state(203, "Read socket",                   actions.read_socket)
+PUBLISH_DATA =                  state(204, "Publish data",                  actions.publish_data)
 
 CLOSE_SOCKETS =                 state(803, "Close sockets",                 actions.close_sockets)
 DESTROY_CONTEXT =               state(804, "Destroy ZeroMQ context",        actions.destroy_context)

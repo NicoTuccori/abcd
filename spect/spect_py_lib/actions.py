@@ -13,8 +13,9 @@ import numpy as np
 from datetime import datetime
 import logging
 import copy
-from .library import receive_byte_message, parse_events, decode_temp_sensor, EVENT_SIZE
+from .library import send_byte_message, receive_byte_message, parse_events, decode_temp_sensor, receive_json_message_no_topic, EVENT_SIZE
 from .typedefs import status, PlotType
+from .timeseries import TimeSeries
 from . import states
 
 import os
@@ -34,7 +35,7 @@ defaults_abcd_temp_publish_timeout = 30
 def generic_publish_message(s: status, topic: str, status_message: dict):
     
     s.update_timestamp()
-    status_message["module"] = "abtp2"
+    status_message["module"] = "spect"
     status_message["timestamp"] = s.last_publication
     status_message["msg_ID"] = s.status_msg_ID
 
@@ -59,60 +60,61 @@ def generic_publish_message(s: status, topic: str, status_message: dict):
 
     s.status_msg_ID += 1
 
-def generic_publish_events(s: status):
+# def generic_publish_events(s: status):
     
-    buffer_size = len(s.events_buffer) // EVENT_SIZE
-    data_size = len(s.events_buffer)
+#     buffer_size = len(s.events_buffer) // EVENT_SIZE
+#     data_size = len(s.events_buffer)
 
-    if buffer_size == 0:
-        return
+#     if buffer_size == 0:
+#         return
 
-    topic = f"{defaults_abcd_events_topic}_v0_n{s.events_msg_ID}_s{data_size}"
+#     topic = f"{defaults_abcd_events_topic}_v0_n{s.events_msg_ID}_s{data_size}"
 
-    if s.verbosity > 0:
-        logging.info(f"Sending binary buffer; "
-                     f"Topic: {topic}; events: {buffer_size}; buffer size: {data_size};")
+#     if s.verbosity > 0:
+#         logging.info(f"Sending binary buffer; "
+#                      f"Topic: {topic}; events: {buffer_size}; buffer size: {data_size};")
 
-    result = send_byte_message(
-        socket=s.data_socket,
-        topic=topic,
-        buffer_bytes=s.events_buffer,  # bytearray is already bytes-like
-        verbosity=s.verbosity,
-    )
+#     result = send_byte_message(
+#         socket=s.data_socket,
+#         topic=topic,
+#         buffer_bytes=s.events_buffer,  # bytearray is already bytes-like
+#         verbosity=s.verbosity,
+#     )
 
-    s.events_msg_ID += 1
+#     s.events_msg_ID += 1
 
-    if not result:
-        logging.warning(f"ZeroMQ Error publishing events")
+#     if not result:
+#         logging.warning(f"ZeroMQ Error publishing events")
 
-    # Reset buffer
-    s.events_buffer.clear()
-    # s.events_buffer.reserve = s.events_buffer_max_size * EVENT_SIZE
+#     # Reset buffer
+#     s.events_buffer.clear()
+#     # s.events_buffer.reserve = s.events_buffer_max_size * EVENT_SIZE
 
-def generic_read_configfile(s: status) -> bool:
+# def generic_read_configfile(s: status) -> bool:
     
-    if s.verbosity > 0:
-        logging.info(f"Reading config file: {s.spect_config_file}")
+#     if s.verbosity > 0:
+#         logging.info(f"Reading config file: {s.spect_config_file}")
 
-    try:
-        with open(s.spect_config_file, 'r') as f:
-            new_config = json.load(f)
-    except json.JSONDecodeError as e:
-        logging.error(f"Parse error while reading config file: {e.msg} "
-              f"(line: {e.lineno}, column: {e.colno})")
-        return False
-    except FileNotFoundError:
-        logging.error(f"Config file not found: {s.spect_config_file}")
-        return False
-    except Exception as e:
-        logging.error(f"Unexpected error reading config file: {e}")
-        return False
+#     try:
+#         with open(s.spect_config_file, 'r') as f:
+#             new_config = json.load(f)
+#     except json.JSONDecodeError as e:
+#         logging.error(f"Parse error while reading config file: {e.msg} "
+#               f"(line: {e.lineno}, column: {e.colno})")
+#         return False
+#     except FileNotFoundError:
+#         logging.error(f"Config file not found: {s.spect_config_file}")
+#         return False
+#     except Exception as e:
+#         logging.error(f"Unexpected error reading config file: {e}")
+#         return False
 
-    s.spect_config = new_config
+#     s.spect_config = new_config
 
-    return True
+#     return True
 
 def generic_read_socket(s: status) -> bool:
+
     abcd_data_socket = s.abcd_data_socket
 
     topic, input_buffer, size = receive_byte_message(abcd_data_socket, s.verbosity)
@@ -137,24 +139,25 @@ def generic_read_socket(s: status) -> bool:
 
             for i, event in enumerate(events):
 
-                logging.info(f"Event: {i}; Channel: {event['baseline']}; Sensor: {decode_temp_sensor(event['baseline'])}; time: {event['timestamp']}; y: {event['qshort']};")
-
-                t = event['timestamp']
+                ts = event['timestamp']
+                if s.start_timestamp is None:
+                    s.start_timestamp = ts
+                t = ts - s.start_timestamp
 
                 if s.plot_type == PlotType.ABTP2_TEMPERATURE:
                     channel = event['baseline']
                     label = decode_temp_sensor(channel)
-                    y = event['qshort']
+                    y = round(event['qshort']/100,2)
 
-                #  TO DO
-                # add_channel(s, channel)
+                    if s.verbosity > 0:
+                        logging.info(f"Event: {i}; Channel: {channel}; Sensor: {label}; time: {ts}; y: {y};")
 
-                # if s.verbosity:
-                #     logging.info(f"Event: {i}; Channel: {channel}; time: {t}; y: {y};")
+                if channel not in s.active_channels:
+                    s.active_channels.append(channel)
+                    s.channel_labels.append(label)
+                    s.plots_t.append(TimeSeries(s.verbosity))
 
-                # update_plot(s.plots[channel], t, y)
-                # s.counts_partial[channel] += 1
-                # s.counts_total[channel] += 1
+                s.plots_t[channel].add_point(ts, t, y)
 
             event_stop = time.time()
 
@@ -166,10 +169,15 @@ def generic_read_socket(s: status) -> bool:
                 logging.info(f"Events number: {events_number}; Elaboration time: {elapsed_ms:.2f} ms; "
                       f"Speed: {speed_MBps:.2f} MB/s, {rate_evts:.2f} evts/s;")
 
-        # Freeing memory not needed in Python
         topic, input_buffer, size = receive_byte_message(abcd_data_socket, s.verbosity)
 
     return True
+
+def generic_publish_data(s: status):
+
+    # TODO
+
+    return
 
 #******************************************************************************/
 #* Specific actions                                                   */
@@ -177,42 +185,21 @@ def generic_read_socket(s: status) -> bool:
 
 def read_config(s: status):
     
-    success = generic_read_configfile(s)
-
-    if not success:
-        logging.error(f"Failed to read configs from file {s.abcd_config_file}")
-        return states.PARSE_ERROR
+    # TO DO
 
     if s.verbosity > 0:
         logging.info(f"Read config\t\t-> OK\t-> CREATE DIGITIZER")
 
-    return states.CREATE_DIGITIZER
+    return states.PUBLISH_STATUS
+    # return states.APPLY_CONFIG TO DO
 
 def publish_status(s: status):
 
     status_message = {
-        "config": json.loads(json.dumps(s.abcd_config)),
-        "acquisition": {
-            "running": False
-        },
-        "digitizer": {}  
+        "statuses": [],
+        "active_channels": [],
+        "config": s.spect_config
     }
-
-    HowIsDAQD = False
-    try:
-        HowIsDAQD = s.daemon.is_daqd_running()
-        if HowIsDAQD:
-            if s.verbosity > 0:
-                logging.info("DAQ daemon running.")
-            status_message["digitizer"]["valid_pointer"] = True
-            status_message["digitizer"]["active"] = True
-        else:
-            logging.error(f"Failed to find the DAQ daemon: HowIsDAQD = {HowIsDAQD}")
-            status_message["digitizer"]["valid_pointer"] = False
-    except Exception as e:
-        logging.error(f"Failed to check if DAQ daemon is running: {e}")
-        return states.DIGITIZER_ERROR
-        # return states.CONFIGURE_ERROR 
 
     # Publish the message using the generic publisher
     generic_publish_message(
@@ -220,14 +207,10 @@ def publish_status(s: status):
         defaults_abcd_status_topic,
         status_message
     )
-
-    if not HowIsDAQD:
-        return states.DIGITIZER_ERROR
-        # return states.CONFIGURE_ERROR 
-    else:
-        if s.verbosity > 0:
-            logging.info("Publish status\t\t-> OK\t-> RECEIVE_COMMANDS")
-        return states.RECEIVE_COMMANDS
+    
+    if s.verbosity > 0:
+        logging.info("Publish status\t\t-> OK\t-> RECEIVE_COMMANDS")
+    return states.RECEIVE_COMMANDS
 
 def receive_commands(s: status):
 
@@ -253,56 +236,41 @@ def receive_commands(s: status):
         if s.verbosity > 0:
             logging.info(f"Message command: {command}")
 
-        # --- start ---
-        if command == "start":
-            logging.info(f"################################################################### Start!!! ###")
-            return states.START_ACQUISITION
+        # --- reset ---
+        if command == "reset" and "arguments" in json_message:
+            arguments = json_message["arguments"]
+            # TO DO
+            pass
         
         # --- reconfigure ---
         elif command == "reconfigure" and "arguments" in json_message:
             arguments = json_message["arguments"]
-
-            if "config" in arguments:
-                # Update global status config (deep copy in case caller mutates later)
-                s.abcd_config = copy.deepcopy(arguments["config"])
-
-                # Build and publish event
-                event_message = {
-                    "type": "event",
-                    "event": "Digitizer reconfiguration",
-                }
-                generic_publish_message(s, defaults_abcd_events_topic, event_message)
-
-                return states.CONFIGURE_DIGITIZER
-            else:
-                logging.error("Reconfigure command received, but no config provided")
-                return states.RECEIVE_COMMANDS
-
-        elif command == "get_temperature":
-            s.publish_temp = True
-
-        # --- stop ---
-        elif command == "off":
-            # return states.CLEAR_MEMORY
-            return states.DESTROY_DIGITIZER
+            # TO DO
+            pass
 
         elif command == "quit":
-            # return states.CLEAR_MEMORY
-            return states.DESTROY_DIGITIZER
+            return states.CLOSE_SOCKETS
 
-    # Check if we need to publish status due to timeout
+    # Default: keep receiving commands
+    return states.READ_SOCKET
+
+def read_socket(s: status):
+
+    generic_read_socket(s)
+
     now = time.time()
     last_pub = s.last_publication
     if (now - last_pub) > defaults_abcd_publish_timeout:
-        return states.PUBLISH_STATUS
-    
-    last_pub_temp = s.last_temp_publication
-    if s.publish_temp and (now - last_pub_temp) > defaults_abcd_temp_publish_timeout:
-        return states.PUBLISH_TEMPERATURE
+        return states.PUBLISH_DATA
 
-    # Default: keep receiving commands
-    return states.RECEIVE_COMMANDS
-    
+    return states.READ_SOCKET
+
+def publish_data(s: status):
+
+    generic_publish_data(s)
+
+    return states.PUBLISH_STATUS
+
 #******************************************************************************/
 #* Sockets-specific actions                                                   */
 #******************************************************************************/
@@ -427,20 +395,6 @@ def close_sockets(s: status):
 #* Errors-specific actions                                                    */
 #******************************************************************************/
 
-def parse_error(s: status):
-    
-    json_event_message = {
-        "type": "error",
-        "error": "Config parse error"
-    }
-
-    generic_publish_message(s, defaults_abcd_events_topic, json_event_message)
-
-    if s.verbosity > 0:
-        logging.info(f"Parse error\t\t-> OK\t-> CLOSE SOCKETS")
-
-    return states.CLOSE_SOCKETS
-
 def communication_error(s: status):
     
     json_event_message = {
@@ -454,20 +408,6 @@ def communication_error(s: status):
         logging.info(f"Communication error\t-> OK\t-> CLOSE SOCKETS")
 
     return states.CLOSE_SOCKETS
-
-def configure_error(s: status):
-    
-    json_event_message = {
-        "type": "error",
-        "error": "Configure error"
-    }
-
-    generic_publish_message(s, defaults_abcd_events_topic, json_event_message)
-
-    if s.verbosity > 0:
-        logging.info(f"Configure error\t\t-> OK\t-> DESTROY DIGITIZER")
-
-    return states.DESTROY_DIGITIZER
 
 def destroy_context(s: status):
     time.sleep(defaults_abcd_zmq_delay / 1000.0)  # delay in seconds

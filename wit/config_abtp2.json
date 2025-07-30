@@ -25,5 +25,33 @@
         ],
         "zzz": null
     },
+    {
+        "name": "spectrum_calculator",
+        "type": "spec",
+        "description": "Spectrum calculator",
+        "sockets": [
+        {
+            "type": "status",
+            "address": "tcp://127.0.0.1:16187",
+            "topic": "status_spec"
+        },
+        {
+            "type": "events",
+            "address": "tcp://127.0.0.1:16187",
+            "topic": "events_spec"
+        },
+        {
+            "type": "data",
+            "address": "tcp://127.0.0.1:16188",
+            "topic": "data_spec_histograms"
+        },
+        {
+            "type": "commands",
+            "address": "tcp://127.0.0.1:16189"
+        },
+        {}
+        ],
+        "zzz": null
+    },
     {}]
 }

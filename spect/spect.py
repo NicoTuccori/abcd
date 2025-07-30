@@ -18,13 +18,16 @@ import os
 import spect_py_lib.states as states
 from spect_py_lib.typedefs import status
 
-# Default ABCD defaults
-DEFAULT_STATUS_ADDR    = 'tcp://*:16180'
-DEFAULT_DATA_ADDR      = 'tcp://*:16181'
-DEFAULT_COMMAND_ADDR   = 'tcp://localhost:16182'
+# Default SPECT
+DEFAULT_SPECT_STATUS_ADDR    = 'tcp://*:16187'
+DEFAULT_SPECT_DATA_ADDR      = 'tcp://*:16188'
+DEFAULT_SPECT_COMMAND_ADDR   =  "tcp://*:16189"
 DEFAULT_CONFIG_FILE    = '/home/petsys/abcd/spect/configs/Config_example.json'
 DEFAULT_BASE_PERIOD_MS = 100.0
 DEFAULT_EVENTS_BUFFER  = 1024
+
+# Default ABCD
+DEFAULT_ABCD_DATA_ADDRESS = 'tcp://*:16181'
 
 terminate_flag = False
 
@@ -51,15 +54,16 @@ def signal_handler(signum, frame):
         logging.info(f"Running")
 
 def print_usage(name="spect"):
-    default_address = address_bind_to_connect("", 0, defaults_abcd_data_address_sub, defaults_abcd_ip)
+
+    # default_address = address_bind_to_connect("", 0, defaults_abcd_data_address_sub, defaults_abcd_ip)
 
     print(f"Usage: {name} [options]")
     print(f"\t-h: Display this message")
     print(f"\t-A <address>: ABCD data socket address, default: {default_address}")
-    print(f"\t-S <address>: Status socket address, default: {defaults_spec_status_address}")
-    print(f"\t-D <address>: Data socket address, default: {defaults_spec_data_address}")
-    print(f"\t-C <address>: Commands socket address, default: {defaults_spec_commands_address}")
-    print(f"\t-T <period>: Set base period in milliseconds, default: {defaults_spec_base_period}")
+    print(f"\t-S <address>: Status socket address, default: {DEFAULT_SPECT_STATUS_ADDR}")
+    print(f"\t-D <address>: Data socket address, default: {DEFAULT_SPECT_DATA_ADDR}")
+    print(f"\t-C <address>: Commands socket address, default: {DEFAULT_SPECT_COMMAND_ADDR}")
+    print(f"\t-T <period>: Set base period in milliseconds, default: {DEFAULT_BASE_PERIOD_MS}")
     print(f"\t-f <config_file>: Set config file, default: none")
     print(f"\t-v: Set verbose execution")
     print(f"\t-V: Set verbose execution with more details")
@@ -74,7 +78,7 @@ if __name__ == '__main__':
 
     # Splash screen
     print("\n========================")
-    print(" spec software - v. 0.1 ")
+    print(" spect software - v. 0.1 ")
     print("========================\n")
 
     # Register signals
@@ -101,12 +105,12 @@ if __name__ == '__main__':
         print_usage(sys.argv[0])
         sys.exit(0)
 
-    abcd_data_address = args.A or defaults_abcd_data_address_sub
-    status_address = args.S or defaults_spec_status_address
-    data_address = args.D or defaults_spec_data_address
-    commands_address = args.C or defaults_spec_commands_address
+    abcd_data_address = args.A or DEFAULT_SPECT_DATA_ADDR
+    status_address = args.S or DEFAULT_SPECT_STATUS_ADDR
+    data_address = args.D or DEFAULT_SPECT_DATA_ADDR
+    commands_address = args.C or DEFAULT_SPECT_COMMAND_ADDR
     config_file = args.f or ""
-    base_period = args.T if args.T is not None else defaults_spec_base_period
+    base_period = args.T if args.T is not None else DEFAULT_BASE_PERIOD_MS
 
     if args.v:
         verbosity = 1
