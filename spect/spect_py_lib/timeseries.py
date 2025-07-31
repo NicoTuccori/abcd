@@ -49,7 +49,7 @@ class TimeSeries:
     def to_dict(self) -> dict:
         return {
             "verbosity": self.verbosity,
-            "data": list(zip(self.times, self.values))
+            "data": list(zip(self.timestamps, self.times, self.values))
         }
 
     def from_dict(self, data: dict):

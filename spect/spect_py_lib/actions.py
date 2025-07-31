@@ -13,7 +13,7 @@ import numpy as np
 from datetime import datetime
 import logging
 import copy
-from .library import send_byte_message, receive_byte_message, parse_events, decode_temp_sensor, receive_json_message_no_topic, EVENT_SIZE
+from .library import send_byte_message, receive_byte_message, parse_events, decode_temp_sensor, receive_json_message_no_topic, send_json_message, EVENT_SIZE
 from .typedefs import status, PlotType
 from .timeseries import TimeSeries
 from . import states
@@ -117,7 +117,15 @@ def generic_read_socket(s: status) -> bool:
 
     abcd_data_socket = s.abcd_data_socket
 
-    topic, input_buffer, size = receive_byte_message(abcd_data_socket, s.verbosity)
+    try:
+        topic, input_buffer, size = receive_byte_message(abcd_data_socket, True, s.verbosity)
+    except Exception as e:
+        logging.error(f"ZeroMQ Error on receive: {e}")
+        return False
+
+    if size is None:
+        logging.info(f"No message received on ZeroMQ socket.")
+        return False
 
     while size > 0:
         if s.verbosity > 0:
@@ -175,9 +183,56 @@ def generic_read_socket(s: status) -> bool:
 
 def generic_publish_data(s: status):
 
-    # TODO
+    status_message = {}
+    active_channels = []
+    channels_data = []
 
-    return
+    now = time.time()
+    pubtime = now - s.last_publication
+    if pubtime <= 0:
+        pubtime = 1e-6  # prevent division by zero
+
+    for channel in s.active_channels:
+        plot_t = s.plots_t[channel]
+
+        if not plot_t.isempty():
+
+            if s.verbosity > 0:
+                logging.info(f"Publishing data for channel: {channel}")
+
+            plot_t_data = plot_t.to_json()
+
+            channel_data = {
+                "id": channel,
+                "enabled": True,
+                "label": s.channel_labels[channel],
+                "plot": plot_t_data
+            }
+            
+            channels_data.append(channel_data)
+            active_channels.append(channel)
+
+    status_message["data"] = channels_data
+    status_message["active_channels"] = active_channels
+    status_message["module"] = "spect"
+    status_message["timestamp"] = datetime.now().isoformat()
+    status_message["msg_ID"] = s.data_msg_ID
+
+    try:
+        send_json_message(
+            s.data_socket,
+            "spect.plots",
+            status_message,
+            s.verbosity
+        )
+    except Exception as e:
+        logging.error(f"Failed to send data: {e}")
+        return False
+    
+    s.data_msg_ID += 1
+    s.last_publication = now
+
+    return True
 
 #******************************************************************************/
 #* Specific actions                                                   */
@@ -188,7 +243,7 @@ def read_config(s: status):
     # TO DO
 
     if s.verbosity > 0:
-        logging.info(f"Read config\t\t-> OK\t-> CREATE DIGITIZER")
+        logging.info(f"Read config\t\t-> OK\t-> PUBLISH STATUS")
 
     return states.PUBLISH_STATUS
     # return states.APPLY_CONFIG TO DO
@@ -251,7 +306,6 @@ def receive_commands(s: status):
         elif command == "quit":
             return states.CLOSE_SOCKETS
 
-    # Default: keep receiving commands
     return states.READ_SOCKET
 
 def read_socket(s: status):
@@ -266,8 +320,12 @@ def read_socket(s: status):
     return states.READ_SOCKET
 
 def publish_data(s: status):
+    
+    success = generic_publish_data(s)
 
-    generic_publish_data(s)
+    if not success:
+        logging.error("Failed to publish data")
+        return states.PUBLISH_STATUS
 
     return states.PUBLISH_STATUS
 

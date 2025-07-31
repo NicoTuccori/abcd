@@ -67,11 +67,11 @@ if __name__ == '__main__':
 
     global_status = status()
 
-    global_status.verbosity = args.verbosity
+    global_status.verbosity = args.verbose
     global_status.abcd_data_address = args.abcd_data_address
     global_status.status_address = args.status_address
     global_status.data_address = args.data_address
-    global_status.commands_address = args.commands_address
+    global_status.commands_address = args.command_address
     global_status.spect_config_file = args.spect_config_file
 
     # Logging

@@ -111,33 +111,90 @@ def send_byte_message(socket: zmq.Socket,
         return False
 
     return True
-    
-def receive_byte_message(socket: zmq.Socket, extract_topic: bool = True, verbosity: int = 0):
-    """
-    Non-blocking receive of a raw byte message from a ZeroMQ socket.
 
-    Args:
-        socket (zmq.Socket): The ZeroMQ socket to read from.
-        verbosity (int): >0 enables debug prints.
+# From src/socket_functions.cpp
+# def receive_byte_message(socket: zmq.Socket, extract_topic: bool = True, verbosity: int = 0):
+#     """
+#     Non-blocking receive of a raw byte message from a ZeroMQ socket.
+
+#     Args:
+#         socket (zmq.Socket): The ZeroMQ socket to read from.
+#         verbosity (int): >0 enables debug prints.
+
+#     Returns:
+#         bytes: The received message payload, or empty bytes if no message or error.
+#     """
+#     try:
+#         # Non-blocking receive
+#         message = socket.recv(flags=zmq.DONTWAIT)
+#     except zmq.Again:
+#         # No message available
+#         return b""
+#     except zmq.ZMQError as e:
+#         logging.error(f"ZeroMQ Error on receive: {e}")
+#         return b""
+
+#     if verbosity > 0:
+#         logging.info(f"Message length: {len(message)}")
+
+#     return message
+
+# From include/socket_functions.h, same as used by spec
+def receive_byte_message(socket, extract_topic=False, verbosity=0):
+    """
+    Receive a message from a ZeroMQ socket.
+
+    Parameters:
+        socket         -- ZeroMQ socket (zmq.Socket)
+        extract_topic  -- If True, extract topic from message (bool)
+        verbosity      -- Debug output level (int)
 
     Returns:
-        bytes: The received message payload, or empty bytes if no message or error.
+        (success, topic, data):
+            success     -- True if successful or no message; False if error
+            topic       -- topic string if extracted, else None
+            data        -- byte string of data (excluding topic if extracted), else None
     """
     try:
-        # Non-blocking receive
         message = socket.recv(flags=zmq.DONTWAIT)
     except zmq.Again:
-        # No message available
-        return b""
+        # No message received (EAGAIN)
+        return True, None, None
     except zmq.ZMQError as e:
-        logging.error(f"ZeroMQ Error on receive: {e}")
-        return b""
+        if verbosity > 0:
+            print(f"ERROR: ZeroMQ Error on receive: {e}")
+        return False, None, None
 
     if verbosity > 0:
-        logging.info(f"Message length: {len(message)}")
+        print(f"Message size: {len(message)}")
 
-    return message
-    
+    topic = None
+    data = None
+
+    if extract_topic:
+        separator_index = message.find(b' ')
+        if separator_index == -1:
+            if verbosity > 0:
+                print("ERROR: Unable to find topic separator")
+            return False, None, None
+
+        topic_bytes = message[:separator_index]
+        data = message[separator_index + 1:]
+
+        try:
+            topic = topic_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            if verbosity > 0:
+                print("ERROR: Topic is not valid UTF-8")
+            return False, None, None
+
+        if verbosity > 0:
+            print(f"Topic size: {len(topic)}; Data size: {len(data)}")
+    else:
+        data = message
+
+    return True, topic, data
+
 def receive_json_message_no_topic(socket, verbosity=0):
     """
     Non-blocking receive of a JSON message from a ZeroMQ socket.
@@ -231,3 +288,28 @@ def receive_json_message(socket, topic_ref, verbosity=None):
         return {}
 
     return json_message
+
+def send_json_message(socket, topic: str, json_message: dict, verbosity: int = 0) -> bool:
+    try:
+        # Serialize the JSON message
+        message = json.dumps(json_message)
+
+        # Create full message with topic prefix if needed
+        envelope_string = f"{topic} {message}" if topic else message
+
+        # Print debug info
+        if verbosity > 0:
+            print(f"[{time_string()}] Message: '{envelope_string}' (length: {len(envelope_string)})")
+
+        # Send the message as a single string
+        socket.send_string(envelope_string)
+
+        return True
+
+    except zmq.ZMQError as e:
+        print(f"[{time_string()}] ZeroMQ Error on send: {e}")
+        return False
+
+    except Exception as e:
+        print(f"[{time_string()}] General error during send: {e}")
+        return False
