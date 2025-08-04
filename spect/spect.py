@@ -26,7 +26,7 @@ DEFAULT_BASE_PERIOD_MS = 100.0
 DEFAULT_EVENTS_BUFFER  = 1024
 
 # Default ABCD
-DEFAULT_ABCD_DATA_ADDRESS = 'tcp://*:16181'
+DEFAULT_ABCD_DATA_ADDRESS_SUB = "tcp://127.0.0.1:16181"
 
 terminate_flag = False
 
@@ -49,7 +49,7 @@ if __name__ == '__main__':
     print("========================\n")
 
     parser = argparse.ArgumentParser(description="ABCD SPECT module -> plot ABCD data over time")
-    parser.add_argument('-A', '--abcd-data-address', dest='abcd_data_address', default=DEFAULT_ABCD_DATA_ADDRESS,
+    parser.add_argument('-A', '--abcd-data-address', dest='abcd_data_address', default=DEFAULT_ABCD_DATA_ADDRESS_SUB,
                         help='ABCD data socket address')
     parser.add_argument('-S', '--status-address', dest='status_address', default=DEFAULT_SPECT_STATUS_ADDR,
                         help='Status PUB socket address')

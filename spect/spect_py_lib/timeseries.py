@@ -69,3 +69,6 @@ class TimeSeries:
         smoothed = np.convolve(self.values, np.ones(window_size)/window_size, mode='valid')
         self.values = list(smoothed)
         self.times = self.times[window_size//2: -(window_size//2)] if window_size % 2 == 1 else self.times[window_size//2: -(window_size//2) + 1]
+
+    def isempty(self) -> bool:
+        return len(self.values) == 0

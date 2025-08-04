@@ -23,8 +23,10 @@ import os
 # Define or import your delay constant (ms)
 defaults_abcd_zmq_delay = 100  # replace with actual constant if needed
 defaults_abcd_events_topic = "events_abcd"
-defaults_abcd_data_events_topic = "events_abcd"
+defaults_abcd_data_events_topic = "data_abcd_events"
 defaults_abcd_status_topic = "status_abcd"
+defaults_spect_data_timeseries_topic = "data_spect_timeseries"
+
 defaults_abcd_publish_timeout = 10
 defaults_abcd_temp_publish_timeout = 30
 
@@ -114,72 +116,89 @@ def generic_publish_message(s: status, topic: str, status_message: dict):
 #     return True
 
 def generic_read_socket(s: status) -> bool:
-
     abcd_data_socket = s.abcd_data_socket
 
+    # First try: non-blocking receive
     try:
-        topic, input_buffer, size = receive_byte_message(abcd_data_socket, True, s.verbosity)
+        success, topic, input_buffer = receive_byte_message(abcd_data_socket, extract_topic=True, verbosity=s.verbosity)
     except Exception as e:
         logging.error(f"ZeroMQ Error on receive: {e}")
         return False
 
-    if size is None:
-        logging.info(f"No message received on ZeroMQ socket.")
-        return False
-
-    while size > 0:
+    if not success or input_buffer is None:
         if s.verbosity > 0:
-            logging.info(f"Message size: {size};")
-            logging.info(f"Topic: {topic};")
+            logging.info("No message received on ZeroMQ socket.")
+        return False  # Exit early if nothing to process
 
-        if topic.startswith(defaults_abcd_data_events_topic):
-            event_start = time.time()
+    # We received something — process and loop if needed
+    while success and input_buffer is not None:
+        size = len(input_buffer)
 
-            data_size = size
-            event_size = EVENT_SIZE
-            events_number = data_size // event_size
+        if s.verbosity > 0:
+            logging.info(f"Message size: {size}")
+            logging.info(f"Topic: {topic}")
+
+        if not topic or not topic.startswith(defaults_abcd_data_events_topic):
+            if s.verbosity > 0:
+                logging.info(f"Ignoring message with unknown topic: {topic}")
+            break  # Exit after first invalid topic
+
+        event_start = time.time()
+        events = list(parse_events(input_buffer))
+        processed_events = 0
+
+        for i, event in enumerate(events):
+            ts = event['timestamp']
+            if s.start_timestamp is None:
+                s.start_timestamp = ts
+            t = ts - s.start_timestamp
+
+            # Defaults
+            channel = event['channel']
+            label = f"CH{channel}"
+            y = 0
+
+            if s.plot_type == PlotType.ABTP2_TEMPERATURE:
+                channel = event['baseline']
+                label = decode_temp_sensor(channel)
+                y = round(event['qshort'] / 100.0, 2)
+
+            if channel not in s.active_channels:
+                s.active_channels.append(channel)
+                s.channel_labels.append(label)
+                s.plots_t.append(TimeSeries(s.verbosity))
+
+            logging.info(f"active_channels: {s.active_channels} - {len(s.active_channels)}")
+
+            index = s.active_channels.index(channel)
+            s.plots_t[index].add_point(ts, t, y)
 
             if s.verbosity > 0:
-                logging.info(f"Data size: {data_size}; Events number: {events_number}; mod: {data_size % event_size};")
+                logging.info(f"Event {i}: CH={channel}, Label={label}, TS={ts}, y={y}")
 
-            events = list(parse_events(input_buffer))
-            events_number = len(events)
+            processed_events += 1
 
-            for i, event in enumerate(events):
+        event_stop = time.time()
 
-                ts = event['timestamp']
-                if s.start_timestamp is None:
-                    s.start_timestamp = ts
-                t = ts - s.start_timestamp
+        if s.verbosity > 0:
+            elapsed_ms = (event_stop - event_start) * 1000
+            data_size = len(input_buffer)
+            speed_MBps = data_size / elapsed_ms * 1000 / 1024 / 1024
+            rate_evts = processed_events / elapsed_ms * 1000
 
-                if s.plot_type == PlotType.ABTP2_TEMPERATURE:
-                    channel = event['baseline']
-                    label = decode_temp_sensor(channel)
-                    y = round(event['qshort']/100,2)
+            logging.info(
+                f"Processed {processed_events} events in {elapsed_ms:.2f} ms | "
+                f"{speed_MBps:.2f} MB/s | {rate_evts:.2f} evts/s"
+            )
 
-                    if s.verbosity > 0:
-                        logging.info(f"Event: {i}; Channel: {channel}; Sensor: {label}; time: {ts}; y: {y};")
+        # Try next message (non-blocking)
+        try:
+            success, topic, input_buffer = receive_byte_message(abcd_data_socket, extract_topic=True, verbosity=s.verbosity)
+        except Exception as e:
+            logging.error(f"ZeroMQ Error on receive: {e}")
+            return True  # We return True since we already processed at least one batch
 
-                if channel not in s.active_channels:
-                    s.active_channels.append(channel)
-                    s.channel_labels.append(label)
-                    s.plots_t.append(TimeSeries(s.verbosity))
-
-                s.plots_t[channel].add_point(ts, t, y)
-
-            event_stop = time.time()
-
-            if s.verbosity > 0:
-                elapsed_ms = (event_stop - event_start) * 1000
-                speed_MBps = data_size / elapsed_ms * 1000 / 1024 / 1024
-                rate_evts = events_number / elapsed_ms * 1000
-
-                logging.info(f"Events number: {events_number}; Elaboration time: {elapsed_ms:.2f} ms; "
-                      f"Speed: {speed_MBps:.2f} MB/s, {rate_evts:.2f} evts/s;")
-
-        topic, input_buffer, size = receive_byte_message(abcd_data_socket, s.verbosity)
-
-    return True
+    return True  # All good
 
 def generic_publish_data(s: status):
 
@@ -193,7 +212,9 @@ def generic_publish_data(s: status):
         pubtime = 1e-6  # prevent division by zero
 
     for channel in s.active_channels:
-        plot_t = s.plots_t[channel]
+
+        index = s.active_channels.index(channel)
+        plot_t = s.plots_t[index]
 
         if not plot_t.isempty():
 
@@ -205,7 +226,7 @@ def generic_publish_data(s: status):
             channel_data = {
                 "id": channel,
                 "enabled": True,
-                "label": s.channel_labels[channel],
+                "label": s.channel_labels[index],
                 "plot": plot_t_data
             }
             
@@ -419,9 +440,15 @@ def bind_sockets(s: status):
         return states.COMMUNICATION_ERROR
 
     try:
-        s.abcd_data_socket.bind(s.abcd_data_address)
+        s.abcd_data_socket.connect(s.abcd_data_address)
     except zmq.ZMQError as e:
         logging.error(f"ZeroMQ Error on abcd data socket binding: {e}")
+        return states.COMMUNICATION_ERROR
+    
+    try:
+        s.abcd_data_socket.setsockopt(zmq.SUBSCRIBE, defaults_abcd_data_events_topic.encode("utf-8"))  # or b"" to receive all topics
+    except zmq.ZMQError as e:
+        logging.error(f"ZeroMQ Error on abcd data socket subscribe: {e}")
         return states.COMMUNICATION_ERROR
 
     time.sleep(defaults_abcd_zmq_delay / 1000.0)  # sleep in seconds

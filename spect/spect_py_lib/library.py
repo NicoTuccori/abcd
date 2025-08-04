@@ -36,7 +36,7 @@ def parse_events(buffer: bytes):
             'timestamp': timestamp,
             'qshort': float(qshort),
             'qlong': float(qlong),
-            'baseline': float(baseline),
+            'baseline': int(baseline),
             'channel': channel,
             'group_counter': group_counter
         }
