@@ -21,7 +21,7 @@ class TimeSeries:
         self.values: List[float] = []
 
     def add_point(self, timestamp: int, time: float, value: float):
-        self.timestamps.append(time)
+        self.timestamps.append(timestamp)
         self.times.append(time)
         self.values.append(value)
         if self.verbosity > 1:

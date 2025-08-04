@@ -22,10 +22,11 @@ import os
 
 # Define or import your delay constant (ms)
 defaults_abcd_zmq_delay = 100  # replace with actual constant if needed
-defaults_abcd_events_topic = "events_abcd"
-defaults_abcd_data_events_topic = "data_abcd_events"
-defaults_abcd_status_topic = "status_abcd"
+defaults_spect_events_topic = "events_spect"
+defaults_spect_status_topic = "status_spect"
 defaults_spect_data_timeseries_topic = "data_spect_timeseries"
+
+defaults_abcd_data_events_topic = "data_abcd_events"
 
 defaults_abcd_publish_timeout = 10
 defaults_abcd_temp_publish_timeout = 30
@@ -62,6 +63,45 @@ def generic_publish_message(s: status, topic: str, status_message: dict):
 
     s.status_msg_ID += 1
 
+def generic_publish_status(s: status) -> bool:
+
+    status_message = {}
+    active_channels = []
+    channels_statuses = []
+
+    now = time.time()
+    pubtime = now - s.last_publication
+    s.last_publication = now
+
+    for channel in s.active_channels:
+
+        channel_total_counts = 0 # TO DO
+        channel_partial_counts = 0 # TO DO
+        channel_rate = 0 # TO DO
+
+        if s.verbosity > 0:
+            logging.info(f"Publishing status for active channel: {channel}")
+
+        channel_status = {
+            "id": channel,
+            "enabled": True,
+            "rate": channel_rate,
+            "counts": channel_total_counts
+        }
+
+        channels_statuses.append(channel_status)
+        active_channels.append(channel)
+
+    status_message["statuses"] = channels_statuses
+    status_message["active_channels"] = active_channels
+    status_message["config"] = json.loads(json.dumps(s.spect_config))  # Deep copy
+
+    generic_publish_message(s, defaults_spect_status_topic, status_message)
+
+    s.status_msg_ID += 1
+
+    return True
+
 # def generic_publish_events(s: status):
     
 #     buffer_size = len(s.events_buffer) // EVENT_SIZE
@@ -70,7 +110,7 @@ def generic_publish_message(s: status, topic: str, status_message: dict):
 #     if buffer_size == 0:
 #         return
 
-#     topic = f"{defaults_abcd_events_topic}_v0_n{s.events_msg_ID}_s{data_size}"
+#     topic = f"{defaults_spect_events_topic}_v0_n{s.events_msg_ID}_s{data_size}"
 
 #     if s.verbosity > 0:
 #         logging.info(f"Sending binary buffer; "
@@ -239,10 +279,19 @@ def generic_publish_data(s: status):
     status_message["timestamp"] = datetime.now().isoformat()
     status_message["msg_ID"] = s.data_msg_ID
 
+    message = json.dumps(status_message, separators=(",", ":"))
+
+    total_size = len(message)
+    topic = f"{defaults_spect_data_timeseries_topic}_v0_s{total_size}"
+
+    if s.verbosity > 0:
+        logging.info(f"Sending status message; Topic: {topic}; "
+                     f"Size: {total_size}; Message: {message}")
+
     try:
         send_json_message(
             s.data_socket,
-            "spect.plots",
+            defaults_spect_data_timeseries_topic,
             status_message,
             s.verbosity
         )
@@ -278,11 +327,12 @@ def publish_status(s: status):
     }
 
     # Publish the message using the generic publisher
-    generic_publish_message(
-        s,
-        defaults_abcd_status_topic,
-        status_message
-    )
+
+    success = generic_publish_status(s)
+
+    if not success:
+        logging.error("Failed to publish status")
+        return states.RECEIVE_COMMANDS
     
     if s.verbosity > 0:
         logging.info("Publish status\t\t-> OK\t-> RECEIVE_COMMANDS")
@@ -487,7 +537,7 @@ def communication_error(s: status):
         "error": "Communication error"
     }
 
-    generic_publish_message(s, defaults_abcd_events_topic, json_event_message)
+    generic_publish_message(s, defaults_spect_events_topic, json_event_message)
 
     if s.verbosity > 0:
         logging.info(f"Communication error\t-> OK\t-> CLOSE SOCKETS")

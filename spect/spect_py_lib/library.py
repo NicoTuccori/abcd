@@ -299,7 +299,7 @@ def send_json_message(socket, topic: str, json_message: dict, verbosity: int = 0
 
         # Print debug info
         if verbosity > 0:
-            print(f"[{time_string()}] Message: '{envelope_string}' (length: {len(envelope_string)})")
+            logging.info(f"Message: '{envelope_string}' (length: {len(envelope_string)})")
 
         # Send the message as a single string
         socket.send_string(envelope_string)
@@ -307,9 +307,9 @@ def send_json_message(socket, topic: str, json_message: dict, verbosity: int = 0
         return True
 
     except zmq.ZMQError as e:
-        print(f"[{time_string()}] ZeroMQ Error on send: {e}")
+        logging.error(f"ZeroMQ Error on send: {e}")
         return False
 
     except Exception as e:
-        print(f"[{time_string()}] General error during send: {e}")
+        logging.error(f"General error during send: {e}")
         return False

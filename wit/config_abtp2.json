@@ -26,24 +26,24 @@
         "zzz": null
     },
     {
-        "name": "spectrum_calculator",
-        "type": "spec",
-        "description": "Spectrum calculator",
+        "name": "timeseries_display",
+        "type": "spect",
+        "description": "Timeseries display",
         "sockets": [
         {
             "type": "status",
             "address": "tcp://127.0.0.1:16187",
-            "topic": "status_spec"
+            "topic": "status_spect"
         },
         {
             "type": "events",
             "address": "tcp://127.0.0.1:16187",
-            "topic": "events_spec"
+            "topic": "events_spect"
         },
         {
             "type": "data",
             "address": "tcp://127.0.0.1:16188",
-            "topic": "data_spec_histograms"
+            "topic": "data_spect_timeseries"
         },
         {
             "type": "commands",

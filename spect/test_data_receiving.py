@@ -59,7 +59,7 @@ def send_dummy_temperature_data(pub_address='tcp://127.0.0.1:16181', topic="data
         
         event_buffer = bytearray()
         for ch in range(0,7):
-            timestamp = int(time.time() * 1e6)  # microseconds
+            timestamp = int(time.time())
             qshort = random.randint(20, 80)*100  # e.g. fake temperature ADC
             qlong = 0
             baseline = encode_temp_sensor(kind=1, sensorID=0, moduleID=0, slaveID=0, portID=ch)
