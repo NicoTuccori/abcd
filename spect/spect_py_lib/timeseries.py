@@ -11,24 +11,27 @@ import numpy as np
 import json
 from typing import List, Union
 import logging
+import time
 
 
 class TimeSeries:
     def __init__(self, verbosity: int = 0):
         self.verbosity = verbosity
-        self.timestamps: List[float] = []
+        self.start_timestamp: int = time.time()
         self.times: List[float] = []
         self.values: List[float] = []
 
-    def add_point(self, timestamp: int, time: float, value: float):
-        self.timestamps.append(timestamp)
+    def add_point(self, time: float, value: float):
         self.times.append(time)
         self.values.append(value)
         if self.verbosity > 1:
             print(f"Added point: time={time}, value={value}")
 
+    def define_start_timestamp(self, start_timestamp: int):
+        self.start_timestamp = start_timestamp
+
     def reset(self):
-        self.timestamps.clear()
+        self.start_timestamp = time.time()
         self.times.clear()
         self.values.clear()
         if self.verbosity > 0:
@@ -49,7 +52,8 @@ class TimeSeries:
     def to_dict(self) -> dict:
         return {
             "verbosity": self.verbosity,
-            "data": list(zip(self.timestamps, self.times, self.values))
+            "start_timestamp": self.start_timestamp,
+            "data": list(zip(self.times, self.values))
         }
 
     def from_dict(self, data: dict):

@@ -9,42 +9,53 @@ function page_loaded() {
     const utf8decoder = new TextDecoder("utf8");
 
     const default_time_refresh = 5;
-    const default_plot_height = 600;
+    const default_plot_height = 900;
 
     var connection_checker = new ConnectionChecker();
 
-    var layout_timeseries = {
+    const layout_timeseries = {
         title: 'Time Series Data',
+        grid: { rows: 1, columns: 1 },
+        
+        // Main x-axis (seconds)
         xaxis: {
-            title: 'Time since start (s)',
-            type: 'linear',
+            title: 'Seconds from start',
             domain: [0, 1],
             anchor: 'y',
-            autorange: true,
+            side: 'bottom',
+            position: 0.1,  // position is between 0 (bottom) and 1 (top)
             showspikes: true,
             spikemode: 'across'
         },
+
+        // Second x-axis (date/time), below the main one
         // xaxis2: {
-        //     title: 'Absolute Time',
-        //     overlaying: 'x',
-        //     side: 'top',
-        //     tickformat: '%H:%M:%S',
-        //     autorange: true,
-        //     showspikes: true,
-        //     spikemode: 'across',
-        //     type: 'date'
+        //     title: 'Date / Time',
+        //     domain: [0, 1],
+        //     anchor: 'free',
+        //     position: 0.05,  // put at very bottom
+        //     side: 'bottom',
+        //     tickvals: [],   // to be filled dynamically
+        //     ticktext: [],
+        //     tickangle: 0
         // },
+
         yaxis: {
             title: 'Value',
+            domain: [0.15, 1], // leave space for two x-axes below
+            anchor: 'x',
             autorange: true,
             showspikes: true,
             spikemode: 'across'
         },
+
         margin: {
             t: 80,
+            b: 80,  // extra space for double x-axis
             l: 70,
             r: 10
         },
+
         hovermode: 'closest',
         legend: { x: 1, xanchor: 'right', y: 1, yanchor: 'top' }
     };
@@ -62,211 +73,150 @@ function page_loaded() {
     var active_channels = [];
     var channel_labels = [];
 
-    let visibleChannels = new Set(); // Channels currently shown
-    let hiddenChannels = new Set(); // Channels currently shown
+    var start_unix = null;
 
     const module_name = String($('input#module_name').val());
-    
-    console.log("Module name: " + module_name);
 
     $("#time_refresh").val(default_time_refresh);
 
-    var old_status = {"timestamp": "###"};
-
     function on_status(message) {
-        
-        const decoded_string = utf8decoder.decode(message);
-        const status = JSON.parse(decoded_string);
-
+        const status = JSON.parse(utf8decoder.decode(message));
         connection_checker.beat();
-
-        if (status.hasOwnProperty("active_channels")) {
-            if (active_channels.length == 0) {
-                updateChannelList(status.active_channels);
-            }
+        if (Array.isArray(status.active_channels)) {
             active_channels = status.active_channels;
-            
-            // updateChannelList(active_channels);
-            // update_selector(active_channels);
         }
     }
 
     function add_to_timeseries(message) {
         message.data.forEach(channelObj => {
-
             const id = channelObj.id;
-            if (!series_data[id]) {
-                series_data[id] = { x: [], x2: [], y: [] };
-            }
-            
+            if (!series_data[id]) series_data[id] = { x: [], y: [] };
             let labelObj;
-            try {
-                labelObj = typeof channelObj.label === "string" ? JSON.parse(channelObj.label) : channelObj.label;
-                if (!channel_labels[id]) {
-                    channel_labels[id] = `( ${labelObj.portID}, ${labelObj.slaveID}, ${labelObj.moduleID}, ${labelObj.sensorID}, ${labelObj.sensorPlace} )`;
-                }
-            } catch (e) {
-                console.error(`Failed to parse label JSON for channel ${id}`, e);
+            labelObj = typeof channelObj.label === "string" ? JSON.parse(channelObj.label) : channelObj.label;
+            if (!channel_labels[id]) {
+                channel_labels[id] = `( ${labelObj.portID}, ${labelObj.slaveID}, ${labelObj.moduleID}, ${labelObj.sensorID}, ${labelObj.sensorPlace} )`;
             }
 
             let plotObj;
-            try {
-                plotObj = JSON.parse(channelObj.plot);
-            } catch (e) {
-                console.error(`Failed to parse plot JSON for channel ${id}`, e);
-                return;
-            }
-
+            plotObj = JSON.parse(channelObj.plot);
+            if (start_unix === null) start_unix = plotObj.start_timestamp;
             plotObj.data.forEach(point => {
-                
-                const t_iso = new Date(point[0] * 1000).toISOString();
-
-                // Push date and value for plotting
-                series_data[id].x.push(point[1]);
-                series_data[id].x2.push(t_iso);
-                series_data[id].y.push(point[2]);
+                series_data[id].x.push(point[0]);
+                series_data[id].y.push(point[1]);
             });
+            series_data[id].x.push(null);
+            series_data[id].y.push(null);
         });
+        
     }
 
     function create_plot() {
-        Plotly.newPlot('plot_timeseries', [], layout_timeseries, config_timeseries);
+        const plotDiv = document.getElementById('plot_timeseries');
+        Plotly.newPlot(plotDiv, [], layout_timeseries, config_timeseries);
     }
 
     function update_plot(force) {
-        const force_update = !_.isNil(force);
+        const force_update = !_.isNil(force) && force;
         const now = dayjs();
-        const diff = next_update_plot.diff(now, "seconds");
+        const difference = next_update_plot.diff(now, 'seconds');
 
-        if (diff <= 0 || force_update) {
+        if (difference <= 0 || force_update) {
+
             let data = [];
+            const plotDiv = document.getElementById('plot_timeseries');
+            const existingTraces = (plotDiv && plotDiv.data) ? plotDiv.data : [];
 
-            // active_channels.forEach(ch => {
-            visibleChannels.forEach(ch => {
-                const checkbox = document.getElementById(`ch-${ch}`);
-                if (checkbox) {
-                    if (series_data[ch]) {
-                        data.push({
-                            x: series_data[ch].x,
-                            y: series_data[ch].y,
-                            mode: 'lines+markers',
-                            name: channel_labels[ch],
-                            type: 'scatter'
-                        });
+            active_channels.forEach((ch, idx) => {
+                if (series_data[ch]) {
+                    const trace_name = channel_labels[ch];
 
-                        // data.push({
-                        //     x: series_data[ch].x2,
-                        //     y: series_data[ch].y,
-                        //     mode: 'lines',
-                        //     name: channel_labels[ch] + ' (abs)',
-                        //     type: 'scatter',
-                        //     xaxis: 'x2',
-                        //     showlegend: false  // prevent legend clutter
-                        // });
+                    let visible = true;
+                    // Check if a trace with this name already exists and preserve its visibility
+                    const existing = existingTraces.find(t => t.name === trace_name);
+                    if (existing && 'visible' in existing) {
+                        visible = existing.visible;
                     }
+                    const trace = {
+                        x: series_data[ch].x,
+                        y: series_data[ch].y,
+                        mode: 'lines+markers',
+                        name: channel_labels[ch],
+                        type: 'scatter',
+                        visible: visible,
+                        line: {
+                            dash: 'dot',  // Try 'dot', 'dash', 'longdash', etc.
+                            width: 0.5
+                        }
+                    };
+                    data.push(trace);
                 }
             });
 
-            // Compute ranges for axes
-            // let allSeconds = [];
-            // visibleChannels.forEach(ch => {
-            //     if (series_data[ch]) allSeconds.push(...series_data[ch].x);
-            // });
+            // Compute date ticks...
+            // Compute tick labels
+            const allSec = [].concat(...data.map(t => t.x));
+            if (allSec.length && start_unix !== null) {
+                const minX = Math.min(...allSec);
+                const maxX = Math.max(...allSec);
+                const totalRange = maxX - minX;
 
-            // if (allSeconds.length > 0) {
-            //     const minSec = Math.min(...allSeconds);
-            //     const maxSec = Math.max(...allSeconds);
+                // 10 evenly spaced second ticks
+                const secTicks = Array.from({ length: 10 }, (_, i) =>
+                    Math.round(minX + (i / 9) * totalRange)
+                );
 
-            //     // const minDate = new Date((startTime + minSec) * 1000).toISOString();
-            //     // const maxDate = new Date((startTime + maxSec) * 1000).toISOString();
+                // 3 datetime ticks: start, middle, end
+                const datetimeTicks = [
+                    minX,
+                    Math.round(minX + totalRange / 2),
+                    maxX
+                ];
 
-            //     layout_timeseries.xaxis.range = [minSec, maxSec];
-            //     layout_timeseries.xaxis2.range = [minDate, maxDate];
-            // }
+                // Merge and deduplicate
+                const tickvals = Array.from(new Set([...secTicks, ...datetimeTicks])).sort((a, b) => a - b);
 
-            Plotly.react('plot_timeseries', data, layout_timeseries);
+                // Map to tick labels: seconds or datetime
+                const ticktext = tickvals.map(s => {
+                    const seconds = `${s}s`;
+                    if (datetimeTicks.includes(s)) {
+                        const d = new Date((start_unix + s) * 1000);
+                        const time = d.toISOString().slice(11, 16); // HH:MM
+                        const date = d.toISOString().slice(5, 10);  // MM-DD
+                        return `${seconds}<br>${time} ${date}`;
+                    } else {
+                        return `${seconds}`;
+                    }
+                });
 
-            const refresh_time = Number($("#time_refresh").val()) || default_time_refresh;
-            next_update_plot = dayjs().add(refresh_time, "seconds");
-        }
-    }
-
-    function updateChannelList(channels) {
-        const container = document.getElementById('channel_list');
-        container.innerHTML = ''; // Clear existing
-
-        channels.forEach(ch => {
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.id = `ch-${ch}`;
-            checkbox.checked = true;
-            checkbox.addEventListener('change', () => toggleChannel(ch, checkbox.checked));
-
-            const label = document.createElement('label');
-            label.htmlFor = checkbox.id;
-            label.textContent = ` ${channel_labels[ch] || `Channel ${ch}`}`;
-
-            const wrapper = document.createElement('div');
-            wrapper.appendChild(checkbox);
-            wrapper.appendChild(label);
-
-            container.appendChild(wrapper);
-            visibleChannels.add(ch);
-        });
-
-        // Initial render
-        update_plot();
-    }
-
-    function toggleChannel(channel, isVisible) {
-        if (isVisible) {
-            visibleChannels.add(channel);
-            if (hiddenChannels.has(channel))
-                hiddenChannels.delete(channel);
-        } else {
-            visibleChannels.delete(channel);
-            hiddenChannels.add(channel);
-        }
-
-        // Add any new active channels that aren't yet in visibleChannels
-        active_channels.forEach(ch => {
-            if (!visibleChannels.has(ch) && !hiddenChannels.has(ch)) {
-                visibleChannels.add(ch);
-                const checkbox = document.getElementById(`ch-${ch}`);
-                if (checkbox) checkbox.checked = true; // tick if not already
+                layout_timeseries.xaxis.tickvals = tickvals;
+                layout_timeseries.xaxis.ticktext = ticktext;
             }
-        });
 
-        refreshPlotNow();
+            Plotly.react(plotDiv, data, layout_timeseries);
+            Plotly.update(plotDiv, data, layout_timeseries);
+            const refresh_time = Number($("#time_refresh").val() || default_time_refresh);
+            next_update_plot = dayjs().add(refresh_time, 'seconds');
+        }
     }
     
     function on_data(message) {
-        
-        let parsed;
-        try {
-            parsed = typeof message === "string" ? JSON.parse(message) : message;
-        } catch (e) {
-            console.error("Failed to parse message", e);
-            return;
-        }
-
         const decoded_string = utf8decoder.decode(message);
         const new_timeseries = JSON.parse(decoded_string);
         add_to_timeseries(new_timeseries);
-        // update_selector(active_channels);
-        if (active_channels.length == 0) updateChannelList(active_channels);
+        // if (active_channels.length == 0) updateChannelList(active_channels);
         update_plot();
     }
     
     socket_io.on("connect", socket_io_connection(socket_io, module_name, on_status, update_events_log(), on_data));
 
-    window.setInterval(() => {
+    window.setInterval(function () {
         connection_checker.display();
     }, 1000);
 
     function refreshPlotNow() {
-        const refresh_time = Number($("#time_refresh").val()) || default_time_refresh;
-        next_update_plot = dayjs().add(refresh_time, "seconds");
+        // let refresh_time = Number($("#time_refresh").val());
+        // if (isNaN(refresh_time) || refresh_time <= 0) refresh_time = default_time_refresh;
+        next_update_plot = dayjs().add(default_time_refresh, "seconds");
         update_plot(true);
     }
     $("#time_refresh").on('change', refreshPlotNow);

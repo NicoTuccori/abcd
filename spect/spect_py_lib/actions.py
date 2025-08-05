@@ -211,7 +211,7 @@ def generic_read_socket(s: status) -> bool:
             logging.info(f"active_channels: {s.active_channels} - {len(s.active_channels)}")
 
             index = s.active_channels.index(channel)
-            s.plots_t[index].add_point(ts, t, y)
+            s.plots_t[index].add_point(t, y)
 
             if s.verbosity > 0:
                 logging.info(f"Event {i}: CH={channel}, Label={label}, TS={ts}, y={y}")
