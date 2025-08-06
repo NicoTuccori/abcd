@@ -46,9 +46,8 @@ class status:
 
     start_timestamp: Optional[int] = None
     enabled_channels: List[int] = field(default_factory=list)
-    active_channels: List[int] = field(default_factory=list)
+    active_channels: Dict[int, List[int]] = field(default_factory=dict)
 
-    active_streams_per_channel: Dict[int, List[int]] = field(default_factory=dict)
     channel_labels: Dict[int, str] = field(default_factory=dict)
     stream_labels_per_channel: Dict[int, List[str]] = field(default_factory=dict)
     plots_t: Dict[int, List[TimeSeries]] = field(default_factory=dict)

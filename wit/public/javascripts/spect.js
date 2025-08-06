@@ -28,18 +28,6 @@ function page_loaded() {
             spikemode: 'across'
         },
 
-        // Second x-axis (date/time), below the main one
-        // xaxis2: {
-        //     title: 'Date / Time',
-        //     domain: [0, 1],
-        //     anchor: 'free',
-        //     position: 0.05,  // put at very bottom
-        //     side: 'bottom',
-        //     tickvals: [],   // to be filled dynamically
-        //     ticktext: [],
-        //     tickangle: 0
-        // },
-
         yaxis: {
             title: 'Value',
             domain: [0.15, 1], // leave space for two x-axes below
@@ -69,11 +57,11 @@ function page_loaded() {
 
     var next_update_plot = dayjs().add(-10, "seconds");
 
-    var series_data = {};  // Store time series arrays per channel
-    var active_channels = [];
+    var active_channels = {};
     var channel_plottypes = {};
+    var channel_data = {};
     var channel_titles = {};
-    var channel_labels = [];
+    var channel_labels = {};
 
     var start_unix = null;
 
@@ -105,59 +93,73 @@ function page_loaded() {
         {
             old_status = new_status;
 
-            //console.log("Updating Speccalc status");
+            try {
+                const active_channels = Object.keys(new_status["active_channels"]).map(Number);
+                update_selector(active_channels);
+            } catch (error) { }
 
             if (new_status.hasOwnProperty("config")) {
                 last_spect_config = new_status["config"];
             }
 
-            if (Array.isArray(new_status.active_channels)) {
+            if (new_status.hasOwnProperty("active_channels")) {
+                for (const [channelStr, streams] of Object.entries(new_status.active_channels)) {
+                    const channel = Number(channelStr); // convert "0" -> 0
 
-                // Initialize or update channel_plottypes
-                for (const ch of new_status.active_channels) {
-                    // Find matching config channel by id
-                    const configChannel = new_status.config.channels.find(c => c && c.id === ch);
+                    const configChannel = new_status.config.channels.find(c => c && c.id === channel);
                     if (configChannel) {
-                        channel_plottypes[ch] = configChannel.plotType;
-                        channel_titles[ch] = configChannel.label;
+                        channel_plottypes[channel] = configChannel.plotType;
+                        channel_titles[channel] = configChannel.label || configChannel.title || "";
 
-                        if (channel_plottypes[ch] == "abtp2_temperature") {
+                        if (channel_plottypes[channel] === "abtp2_temperature") {
                             const plotDiv = document.getElementById('plot_timeseries');
-                            plotDiv.layout.title.text = channel_titles[ch];
+                            if (plotDiv?.layout?.title) {
+                                plotDiv.layout.title.text = channel_titles[channel];
+                                Plotly.relayout('plot_timeseries', { 'title.text': channel_titles[channel] });
+                            }
                         }
-
                     }
+
+                    active_channels[channel] = streams;
                 }
             }
         }
     }
 
     function add_to_timeseries(message) {
-        message.data.forEach(channelObj => {
-            const ch = channelObj.id;
-            var id = ch;
 
-            if (channel_plottypes[ch] == "abtp2_temperature") id = channelObj.stream;
-
-            if (!series_data[id]) series_data[id] = { x: [], y: [] };
-            if (!active_channels.includes(id)) active_channels.push(id);
-            let labelObj;
-            labelObj = typeof channelObj.label === "string" ? JSON.parse(channelObj.label) : channelObj.label;
-            if (!channel_labels[id]) {
-                channel_labels[id] = `( ${labelObj.portID}, ${labelObj.slaveID}, ${labelObj.moduleID}, ${labelObj.sensorID}, ${labelObj.sensorPlace} )`;
+        if (_.has(message, "active_channels") && _.has(message, "data"))
+        {   
+            for (const [channelStr, streams] of Object.entries(message.active_channels)) {
+                active_channels[Number(channelStr)] = streams;
             }
 
-            let plotObj;
-            plotObj = JSON.parse(channelObj.plot);
-            if (start_unix === null) start_unix = plotObj.start_timestamp;
-            plotObj.data.forEach(point => {
-                series_data[id].x.push(point[0]);
-                series_data[id].y.push(point[1]);
+            message.data.forEach(channelObj => {
+
+                const ch = channelObj.id;
+                var id = ch;
+
+                if (channel_plottypes[ch] == "abtp2_temperature") id = channelObj.stream;
+
+                if (!channel_data[id]) channel_data[id] = { x: [], y: [] };
+
+                let labelObj;
+                if (!channel_labels[id]) {
+                    labelObj = typeof channelObj.label === "string" ? JSON.parse(channelObj.label) : channelObj.label;
+                    channel_labels[id] = `( ${labelObj.portID}, ${labelObj.slaveID}, ${labelObj.moduleID}, ${labelObj.sensorID}, ${labelObj.sensorPlace} )`;
+                }
+
+                let plotObj;
+                plotObj = JSON.parse(channelObj.plot);
+                if (start_unix === null) start_unix = plotObj.start_timestamp;
+                plotObj.data.forEach(point => {
+                    channel_data[id].x.push(point[0]);
+                    channel_data[id].y.push(point[1]);
+                });
+                channel_data[id].x.push(null);
+                channel_data[id].y.push(null);
             });
-            series_data[id].x.push(null);
-            series_data[id].y.push(null);
-        });
-        
+        }        
     }
 
     function create_plot() {
@@ -176,8 +178,10 @@ function page_loaded() {
             const plotDiv = document.getElementById('plot_timeseries');
             const existingTraces = (plotDiv && plotDiv.data) ? plotDiv.data : [];
 
-            active_channels.forEach((ch, idx) => {
-                if (series_data[ch]) {
+            // active_channels.forEach((ch, idx) => {
+            const ch = selected_channel();
+            active_channels[ch].forEach((ch, idx) => {
+                if (channel_data[ch]) {
                     const trace_name = channel_labels[ch];
 
                     let visible = true;
@@ -187,8 +191,8 @@ function page_loaded() {
                         visible = existing.visible;
                     }
                     const trace = {
-                        x: series_data[ch].x,
-                        y: series_data[ch].y,
+                        x: channel_data[ch].x,
+                        y: channel_data[ch].y,
                         mode: 'lines+markers',
                         name: channel_labels[ch],
                         type: 'scatter',
@@ -253,7 +257,7 @@ function page_loaded() {
         const decoded_string = utf8decoder.decode(message);
         const new_timeseries = JSON.parse(decoded_string);
         add_to_timeseries(new_timeseries);
-        // if (active_channels.length == 0) updateChannelList(active_channels);
+        update_selector(active_channels);
         update_plot();
     }
 
@@ -272,6 +276,10 @@ function page_loaded() {
     window.setInterval(function () {
         connection_checker.display();
     }, 1000);
+
+    $("#channel_select").on('change', function () {
+        update_plot(true);
+    });
 
     function refreshPlotNow() {
         // let refresh_time = Number($("#time_refresh").val());

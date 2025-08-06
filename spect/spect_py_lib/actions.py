@@ -66,7 +66,7 @@ def generic_publish_message(s: status, topic: str, status_message: dict):
 def generic_publish_status(s: status) -> bool:
 
     status_message = {}
-    active_channels = []
+    active_channels = {}
     channels_statuses = []
 
     now = time.time()
@@ -90,7 +90,7 @@ def generic_publish_status(s: status) -> bool:
         }
 
         channels_statuses.append(channel_status)
-        active_channels.append(channel)
+        active_channels[channel] = s.active_channels[channel]
 
     status_message["statuses"] = channels_statuses
     status_message["active_channels"] = active_channels
@@ -195,10 +195,9 @@ def generic_read_socket(s: status) -> bool:
                 continue
             
             if channel not in s.active_channels:
-                s.active_channels.append(channel)
+                s.active_channels[channel] = []
                 ch_label = s.spect_config['channels'][channel]['label']
                 s.channel_labels[channel] = ch_label
-                s.active_streams_per_channel[channel] = []
                 s.stream_labels_per_channel[channel] = []
                 s.plots_t[channel] = []
 
@@ -208,6 +207,8 @@ def generic_read_socket(s: status) -> bool:
             t = ts - s.start_timestamp
 
             y = 0
+            stream = -1
+            stream_label = ""
 
             if s.plot_type[channel] == PlotType.ABTP2_TEMPERATURE:
 
@@ -215,13 +216,13 @@ def generic_read_socket(s: status) -> bool:
                 stream_label = decode_temp_sensor(stream)
                 y = round(event['qshort'] / 100.0, 2)
 
-                if stream not in s.active_streams_per_channel[channel]:
-                    s.active_streams_per_channel[channel].append(stream)
-                    s.stream_labels_per_channel[channel].append(stream_label)
-                    s.plots_t[channel].append(TimeSeries(s.verbosity))
+            if stream not in s.active_channels[channel]:
+                s.active_channels[channel].append(stream)
+                s.stream_labels_per_channel[channel].append(stream_label)
+                s.plots_t[channel].append(TimeSeries(s.verbosity))
 
-                st_index = s.active_streams_per_channel[channel].index(stream)
-                s.plots_t[channel][st_index].add_point(t, y)
+            st_index = s.active_channels[channel].index(stream)
+            s.plots_t[channel][st_index].add_point(t, y)
 
             if s.verbosity > 0:
                 logging.info(f"Event {i}: ch={channel}, ch_label={s.channel_labels[channel]}, stream={stream}, stream_label={stream_label}, TS={ts}, y={y}")
@@ -253,7 +254,7 @@ def generic_read_socket(s: status) -> bool:
 def generic_publish_data(s: status):
 
     status_message = {}
-    active_channels = []
+    active_channels = {}
     channels_data = []
 
     now = time.time()
@@ -263,9 +264,9 @@ def generic_publish_data(s: status):
 
     for channel in s.active_channels:
 
-        for stream in s.active_streams_per_channel[channel]:
+        for stream in s.active_channels[channel]:
 
-            st_index = s.active_streams_per_channel[channel].index(stream)
+            st_index = s.active_channels[channel].index(stream)
             plot_t = s.plots_t[channel][st_index]
 
             if not plot_t.isempty():
@@ -284,7 +285,7 @@ def generic_publish_data(s: status):
                 }
             
             channels_data.append(channel_data)
-        active_channels.append(channel)
+        active_channels[channel] = s.active_channels[channel]
 
     status_message["data"] = channels_data
     status_message["active_channels"] = active_channels
