@@ -17,6 +17,7 @@ CREATE_CONTEXT =                state(101, "Create ZeroMQ context",         acti
 CREATE_SOCKETS =                state(102, "Create sockets",                actions.create_sockets)
 BIND_SOCKETS =                  state(103, "Bind sockets",                  actions.bind_sockets)
 READ_CONFIG =                   state(104, "Read configuration",            actions.read_config)
+APPLY_CONFIG =                  state(105, "Apply configuration",           actions.apply_config)
 
 RECEIVE_COMMANDS =              state(201, "Receive commands",              actions.receive_commands)
 PUBLISH_STATUS =                state(202, "Publish status",                actions.publish_status)
@@ -31,7 +32,7 @@ COMMUNICATION_ERROR =           state(901, "Communication error",           acti
 
 # List of all states
 states = [
-    START, CREATE_CONTEXT, CREATE_SOCKETS, BIND_SOCKETS, READ_CONFIG,
+    START, CREATE_CONTEXT, CREATE_SOCKETS, BIND_SOCKETS, READ_CONFIG, APPLY_CONFIG,
     RECEIVE_COMMANDS, PUBLISH_STATUS, 
     CLOSE_SOCKETS, DESTROY_CONTEXT, STOP, COMMUNICATION_ERROR
 ]

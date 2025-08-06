@@ -71,6 +71,8 @@ function page_loaded() {
 
     var series_data = {};  // Store time series arrays per channel
     var active_channels = [];
+    var channel_plottypes = {};
+    var channel_titles = {};
     var channel_labels = [];
 
     var start_unix = null;
@@ -79,18 +81,66 @@ function page_loaded() {
 
     $("#time_refresh").val(default_time_refresh);
 
+    var old_status = {"timestamp": "###"};
+    var last_spect_config = null;
+
+    var spect_config_editor = ace.edit("online_editor");
+    spect_config_editor.setTheme("ace/theme/github");
+    spect_config_editor.setShowPrintMargin(false);
+    spect_config_editor.setOptions({"fontFamily": '"Fira Mono"'});
+
+    spect_config_editor.getSession().setMode("ace/mode/json");
+    spect_config_editor.getSession().setTabSize(4);
+    spect_config_editor.getSession().setUseSoftTabs(true);
+
+    spect_config_editor.container.style.lineHeight = 2;
+    spect_config_editor.renderer.updateFontSize();
+    spect_config_editor.resize();
+
     function on_status(message) {
-        const status = JSON.parse(utf8decoder.decode(message));
+        const new_status = JSON.parse(utf8decoder.decode(message));
         connection_checker.beat();
-        if (Array.isArray(status.active_channels)) {
-            active_channels = status.active_channels;
+
+        if (new_status["timestamp"] !== old_status["timestamp"])
+        {
+            old_status = new_status;
+
+            //console.log("Updating Speccalc status");
+
+            if (new_status.hasOwnProperty("config")) {
+                last_spect_config = new_status["config"];
+            }
+
+            if (Array.isArray(new_status.active_channels)) {
+
+                // Initialize or update channel_plottypes
+                for (const ch of new_status.active_channels) {
+                    // Find matching config channel by id
+                    const configChannel = new_status.config.channels.find(c => c && c.id === ch);
+                    if (configChannel) {
+                        channel_plottypes[ch] = configChannel.plotType;
+                        channel_titles[ch] = configChannel.label;
+
+                        if (channel_plottypes[ch] == "abtp2_temperature") {
+                            const plotDiv = document.getElementById('plot_timeseries');
+                            plotDiv.layout.title.text = channel_titles[ch];
+                        }
+
+                    }
+                }
+            }
         }
     }
 
     function add_to_timeseries(message) {
         message.data.forEach(channelObj => {
-            const id = channelObj.id;
+            const ch = channelObj.id;
+            var id = ch;
+
+            if (channel_plottypes[ch] == "abtp2_temperature") id = channelObj.stream;
+
             if (!series_data[id]) series_data[id] = { x: [], y: [] };
+            if (!active_channels.includes(id)) active_channels.push(id);
             let labelObj;
             labelObj = typeof channelObj.label === "string" ? JSON.parse(channelObj.label) : channelObj.label;
             if (!channel_labels[id]) {
@@ -206,6 +256,16 @@ function page_loaded() {
         // if (active_channels.length == 0) updateChannelList(active_channels);
         update_plot();
     }
+
+    function spect_get_config() {
+        if (_.isNil(last_spect_config)) {
+            spect_config_editor.getSession().setValue(JSON.stringify({"error": "Unable to load spect config"}, null, 4));
+            spect_config_editor.gotoLine(0);
+        } else {
+            spect_config_editor.getSession().setValue(JSON.stringify(last_spect_config, null, 4));
+            spect_config_editor.gotoLine(0);
+        }
+    }
     
     socket_io.on("connect", socket_io_connection(socket_io, module_name, on_status, update_events_log(), on_data));
 
@@ -220,6 +280,10 @@ function page_loaded() {
         update_plot(true);
     }
     $("#time_refresh").on('change', refreshPlotNow);
+
+    // $("#button_config_send").on("click", send_command(socket_io, 'reconfigure', spec_arguments_reconfigure));
+    $("#button_config_get").on("click", spect_get_config);
+    // $("#button_config_download").on("click", spec_download_config);
 
     // Resize handling to keep plot responsive
     var observer = new MutationObserver(function () {

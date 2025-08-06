@@ -188,33 +188,43 @@ def generic_read_socket(s: status) -> bool:
         processed_events = 0
 
         for i, event in enumerate(events):
+            
+            channel = event['channel']
+
+            if channel not in s.enabled_channels:
+                continue
+            
+            if channel not in s.active_channels:
+                s.active_channels.append(channel)
+                ch_label = s.spect_config['channels'][channel]['label']
+                s.channel_labels[channel] = ch_label
+                s.active_streams_per_channel[channel] = []
+                s.stream_labels_per_channel[channel] = []
+                s.plots_t[channel] = []
+
             ts = event['timestamp']
             if s.start_timestamp is None:
                 s.start_timestamp = ts
             t = ts - s.start_timestamp
 
-            # Defaults
-            channel = event['channel']
-            label = f"CH{channel}"
             y = 0
 
-            if s.plot_type == PlotType.ABTP2_TEMPERATURE:
-                channel = event['baseline']
-                label = decode_temp_sensor(channel)
+            if s.plot_type[channel] == PlotType.ABTP2_TEMPERATURE:
+
+                stream = event['baseline']
+                stream_label = decode_temp_sensor(stream)
                 y = round(event['qshort'] / 100.0, 2)
 
-            if channel not in s.active_channels:
-                s.active_channels.append(channel)
-                s.channel_labels.append(label)
-                s.plots_t.append(TimeSeries(s.verbosity))
+                if stream not in s.active_streams_per_channel[channel]:
+                    s.active_streams_per_channel[channel].append(stream)
+                    s.stream_labels_per_channel[channel].append(stream_label)
+                    s.plots_t[channel].append(TimeSeries(s.verbosity))
 
-            logging.info(f"active_channels: {s.active_channels} - {len(s.active_channels)}")
-
-            index = s.active_channels.index(channel)
-            s.plots_t[index].add_point(t, y)
+                st_index = s.active_streams_per_channel[channel].index(stream)
+                s.plots_t[channel][st_index].add_point(t, y)
 
             if s.verbosity > 0:
-                logging.info(f"Event {i}: CH={channel}, Label={label}, TS={ts}, y={y}")
+                logging.info(f"Event {i}: ch={channel}, ch_label={s.channel_labels[channel]}, stream={stream}, stream_label={stream_label}, TS={ts}, y={y}")
 
             processed_events += 1
 
@@ -253,25 +263,28 @@ def generic_publish_data(s: status):
 
     for channel in s.active_channels:
 
-        index = s.active_channels.index(channel)
-        plot_t = s.plots_t[index]
+        for stream in s.active_streams_per_channel[channel]:
 
-        if not plot_t.isempty():
+            st_index = s.active_streams_per_channel[channel].index(stream)
+            plot_t = s.plots_t[channel][st_index]
 
-            if s.verbosity > 0:
-                logging.info(f"Publishing data for channel: {channel}")
+            if not plot_t.isempty():
 
-            plot_t_data = plot_t.to_json()
+                if s.verbosity > 0:
+                    logging.info(f"Publishing data for channel: {channel}, stream: {stream}")
 
-            channel_data = {
-                "id": channel,
-                "enabled": True,
-                "label": s.channel_labels[index],
-                "plot": plot_t_data
-            }
+                plot_t_data = plot_t.to_json()
+
+                channel_data = {
+                    "id": channel,
+                    "stream": stream,
+                    "enabled": True,
+                    "label": s.stream_labels_per_channel[channel][st_index],
+                    "plot": plot_t_data
+                }
             
             channels_data.append(channel_data)
-            active_channels.append(channel)
+        active_channels.append(channel)
 
     status_message["data"] = channels_data
     status_message["active_channels"] = active_channels
@@ -310,13 +323,52 @@ def generic_publish_data(s: status):
 
 def read_config(s: status):
     
-    # TO DO
+    config_file = s.spect_config_file
+
+    try:
+        with open(config_file, 'r') as f:
+            s.spect_config = json.load(f)
+    except Exception as e:
+        logging.error(f"Failed to read config: {e}")
+        return states.PUBLISH_STATUS
 
     if s.verbosity > 0:
-        logging.info(f"Read config\t\t-> OK\t-> PUBLISH STATUS")
+        logging.info(f"Read config\t\t-> OK\t-> APPLY_CONFIG")
 
-    return states.PUBLISH_STATUS
-    # return states.APPLY_CONFIG TO DO
+    return states.APPLY_CONFIG
+
+def apply_config(s: status):
+
+    if s.verbosity > 0:
+        logging.info(f"Applying config: {s.spect_config}")
+
+    try:
+        for channel in s.spect_config["channels"]:
+
+            if isinstance(channel, dict) and not channel:
+                continue
+
+            if channel["enabled"]:
+                s.enabled_channels.append(channel["id"])
+            else:
+                if channel["id"] in s.enabled_channels:
+                    s.enabled_channels.remove(channel["id"])
+                continue
+            
+            plottype = None
+            if channel["plotType"] == "abtp2_temperature":
+                plottype = PlotType.ABTP2_TEMPERATURE
+            
+            s.plot_type[channel["id"]] = plottype
+
+    except Exception as e:
+        logging.error(f"Failed to apply config: {e}")
+        return states.RECEIVE_COMMANDS
+
+    if s.verbosity > 0:
+        logging.info(f"Apply config\t\t-> OK\t-> RECEIVE_COMMANDS")
+
+    return states.RECEIVE_COMMANDS
 
 def publish_status(s: status):
 

@@ -42,12 +42,16 @@ class status:
     system_start: float = field(default_factory=lambda: time.time())
     last_publication: float = field(default_factory=lambda: time.time())
 
-    plot_type: int = PlotType.ABTP2_TEMPERATURE
+    plot_type: Dict[int, int] = field(default_factory=dict)
 
-    start_timestamp: Optional[float] = None
+    start_timestamp: Optional[int] = None
+    enabled_channels: List[int] = field(default_factory=list)
     active_channels: List[int] = field(default_factory=list)
-    channel_labels: List[int] = field(default_factory=list)
-    plots_t: List[TimeSeries] = field(default_factory=list)
+
+    active_streams_per_channel: Dict[int, List[int]] = field(default_factory=dict)
+    channel_labels: Dict[int, str] = field(default_factory=dict)
+    stream_labels_per_channel: Dict[int, List[str]] = field(default_factory=dict)
+    plots_t: Dict[int, List[TimeSeries]] = field(default_factory=dict)
     
     counts_partial: Dict[int, int] = field(default_factory=dict)
     counts: Dict[int, int] = field(default_factory=dict)
