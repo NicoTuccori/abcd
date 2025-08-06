@@ -15,17 +15,14 @@ import time
 
 
 class TimeSeries:
-    def __init__(self, verbosity: int = 0):
-        self.verbosity = verbosity
-        self.start_timestamp: int = time.time()
-        self.times: List[float] = []
+    def __init__(self):
+        self.start_timestamp: int = int(time.time())
+        self.times: List[int] = []
         self.values: List[float] = []
 
-    def add_point(self, time: float, value: float):
+    def add_point(self, time: int, value: float):
         self.times.append(time)
         self.values.append(value)
-        if self.verbosity > 1:
-            print(f"Added point: time={time}, value={value}")
 
     def define_start_timestamp(self, start_timestamp: int):
         self.start_timestamp = start_timestamp
@@ -34,8 +31,6 @@ class TimeSeries:
         self.start_timestamp = time.time()
         self.times.clear()
         self.values.clear()
-        if self.verbosity > 0:
-            print("TimeSeries reset")
 
     def mean(self) -> float:
         return np.mean(self.values) if self.values else float("nan")
@@ -51,13 +46,11 @@ class TimeSeries:
 
     def to_dict(self) -> dict:
         return {
-            "verbosity": self.verbosity,
             "start_timestamp": self.start_timestamp,
             "data": list(zip(self.times, self.values))
         }
 
     def from_dict(self, data: dict):
-        self.verbosity = data.get("verbosity", 0)
         time_value_pairs = data.get("data", [])
         self.times, self.values = zip(*time_value_pairs) if time_value_pairs else ([], [])
 

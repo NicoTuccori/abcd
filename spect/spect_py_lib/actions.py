@@ -219,13 +219,13 @@ def generic_read_socket(s: status) -> bool:
             if stream not in s.active_channels[channel]:
                 s.active_channels[channel].append(stream)
                 s.stream_labels_per_channel[channel].append(stream_label)
-                s.plots_t[channel].append(TimeSeries(s.verbosity))
+                s.plots_t[channel].append(TimeSeries())
 
             st_index = s.active_channels[channel].index(stream)
             s.plots_t[channel][st_index].add_point(t, y)
 
-            if s.verbosity > 0:
-                logging.info(f"Event {i}: ch={channel}, ch_label={s.channel_labels[channel]}, stream={stream}, stream_label={stream_label}, TS={ts}, y={y}")
+            # if s.verbosity > 0:
+            #     logging.info(f"Event {i}: ch={channel}, ch_label={s.channel_labels[channel]}, stream={stream}, stream_label={stream_label}, TS={ts}, y={y}")
 
             processed_events += 1
 
@@ -271,15 +271,14 @@ def generic_publish_data(s: status):
 
             if not plot_t.isempty():
 
-                if s.verbosity > 0:
-                    logging.info(f"Publishing data for channel: {channel}, stream: {stream}")
+                # if s.verbosity > 0:
+                #     logging.info(f"Publishing data for channel: {channel}, stream: {stream}")
 
-                plot_t_data = plot_t.to_json()
+                plot_t_data = plot_t.to_dict()
 
                 channel_data = {
                     "id": channel,
                     "stream": stream,
-                    "enabled": True,
                     "label": s.stream_labels_per_channel[channel][st_index],
                     "plot": plot_t_data
                 }
@@ -307,7 +306,7 @@ def generic_publish_data(s: status):
             s.data_socket,
             defaults_spect_data_timeseries_topic,
             status_message,
-            s.verbosity
+            0
         )
     except Exception as e:
         logging.error(f"Failed to send data: {e}")
@@ -418,8 +417,29 @@ def receive_commands(s: status):
         # --- reset ---
         if command == "reset" and "arguments" in json_message:
             arguments = json_message["arguments"]
-            # TO DO
-            pass
+
+            reset_channel = arguments.get("channel")
+
+            if reset_channel is not None:
+
+                if s.verbosity:
+                    logging.info(f"Received command {command} for channel: {reset_channel}")
+
+                if isinstance(reset_channel, str) and reset_channel.lower() == "all":
+                    s.reset_plots()
+                    json_event_message = {
+                        "type": "event",
+                        "event": "Reset of all channels"
+                    }
+                    generic_publish_message(s, defaults_spect_events_topic, json_event_message)
+
+                elif isinstance(reset_channel, int):
+                    s.reset_plots(reset_channel)
+                    json_event_message = {
+                        "type": "event",
+                        "event": "Reset of channel" + str(reset_channel)
+                    }
+                    generic_publish_message(s, defaults_spect_events_topic, json_event_message)
         
         # --- reconfigure ---
         elif command == "reconfigure" and "arguments" in json_message:

@@ -58,6 +58,19 @@ class status:
     def update_timestamp(self):
         self.last_publication = time.time()
 
+    def reset_plots(self, *channels: int):
+        if channels:
+            # Clear only specified channels
+            for channel in channels:
+                if channel in self.plots_t:
+                    for stream in self.plots_t[channel]:
+                        stream.reset()
+        else:
+            # No channels passed → clear all lists but keep keys
+            for key in self.plots_t:
+                for stream in self.plots_t[key]:
+                    stream.reset()
+
 # Equivalent to C++ struct state
 action = Callable[[status], Any]
 

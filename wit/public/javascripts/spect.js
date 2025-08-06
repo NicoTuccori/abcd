@@ -150,7 +150,7 @@ function page_loaded() {
                 }
 
                 let plotObj;
-                plotObj = JSON.parse(channelObj.plot);
+                plotObj = channelObj.plot;
                 if (start_unix === null) start_unix = plotObj.start_timestamp;
                 plotObj.data.forEach(point => {
                     channel_data[id].x.push(point[0]);
@@ -257,7 +257,7 @@ function page_loaded() {
         const decoded_string = utf8decoder.decode(message);
         const new_timeseries = JSON.parse(decoded_string);
         add_to_timeseries(new_timeseries);
-        update_selector(active_channels);
+        // update_selector(active_channels);
         update_plot();
     }
 
@@ -268,6 +268,15 @@ function page_loaded() {
         } else {
             spect_config_editor.getSession().setValue(JSON.stringify(last_spect_config, null, 4));
             spect_config_editor.gotoLine(0);
+        }
+    }
+
+    function spect_arguments_reset(channel) {
+        return function () {
+            const kwargs = {"channel": (_.isNil(channel) ? selected_channel() : channel),
+                            "type": "all"};
+    
+            return kwargs;
         }
     }
     
@@ -292,6 +301,8 @@ function page_loaded() {
     // $("#button_config_send").on("click", send_command(socket_io, 'reconfigure', spec_arguments_reconfigure));
     $("#button_config_get").on("click", spect_get_config);
     // $("#button_config_download").on("click", spec_download_config);
+    $("#button_reset_channel").on("click", send_command(socket_io, 'reset', spect_arguments_reset()));
+    $("#button_reset_all").on("click", send_command(socket_io, 'reset', spect_arguments_reset("all")));
 
     // Resize handling to keep plot responsive
     var observer = new MutationObserver(function () {
