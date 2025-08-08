@@ -152,10 +152,25 @@ function page_loaded() {
                 let plotObj;
                 plotObj = channelObj.plot;
                 if (start_unix === null) start_unix = plotObj.start_timestamp;
+                // Remove previous null if it exists at the end
+                if (
+                    channel_data[id].x.length > 0 &&
+                    channel_data[id].x[channel_data[id].x.length - 1] === null
+                ) {
+                    channel_data[id].x.pop();
+                    channel_data[id].y.pop();
+                }
+
+                const lastX = channel_data[id].x[channel_data[id].x.length - 1] ?? -Infinity;
+
                 plotObj.data.forEach(point => {
-                    channel_data[id].x.push(point[0]);
-                    channel_data[id].y.push(point[1]);
+                    if (point[0] > lastX) {
+                        channel_data[id].x.push(point[0]);
+                        channel_data[id].y.push(point[1]);
+                    }
                 });
+
+                // Always append null at the end
                 channel_data[id].x.push(null);
                 channel_data[id].y.push(null);
             });
