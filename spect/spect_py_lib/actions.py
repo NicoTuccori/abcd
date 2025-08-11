@@ -220,6 +220,7 @@ def generic_read_socket(s: status) -> bool:
                 s.active_channels[channel].append(stream)
                 s.stream_labels_per_channel[channel].append(stream_label)
                 s.plots_t[channel].append(TimeSeries())
+                s.plots_t[channel][-1].start_timestamp = s.start_timestamp
 
             st_index = s.active_channels[channel].index(stream)
             s.plots_t[channel][st_index].add_point(t, y)
@@ -251,7 +252,7 @@ def generic_read_socket(s: status) -> bool:
 
     return True  # All good
 
-def generic_publish_data(s: status):
+def generic_publish_data(s: status, all_data=False) -> bool:
 
     status_message = {}
     active_channels = {}
@@ -269,12 +270,16 @@ def generic_publish_data(s: status):
             st_index = s.active_channels[channel].index(stream)
             plot_t = s.plots_t[channel][st_index]
 
-            if not plot_t.isempty():
+            if not plot_t.isempty() and len(plot_t.values) > 0:
 
                 # if s.verbosity > 0:
                 #     logging.info(f"Publishing data for channel: {channel}, stream: {stream}")
 
-                plot_t_data = plot_t.to_dict()
+                if not all_data:
+                    plot_t_data = plot_t.latest_data_to_dict()
+                else:
+                    logging.warning(f"Publishing all data for channel: {channel}, stream: {stream}. It may take a while...")
+                    plot_t_data = plot_t.to_dict()
 
                 channel_data = {
                     "id": channel,
@@ -282,8 +287,8 @@ def generic_publish_data(s: status):
                     "label": s.stream_labels_per_channel[channel][st_index],
                     "plot": plot_t_data
                 }
-            
-            channels_data.append(channel_data)
+                channels_data.append(channel_data)
+        
         active_channels[channel] = s.active_channels[channel]
 
     status_message["data"] = channels_data
@@ -363,12 +368,12 @@ def apply_config(s: status):
 
     except Exception as e:
         logging.error(f"Failed to apply config: {e}")
-        return states.RECEIVE_COMMANDS
+        return states.PUBLISH_STATUS
 
     if s.verbosity > 0:
-        logging.info(f"Apply config\t\t-> OK\t-> RECEIVE_COMMANDS")
+        logging.info(f"Apply config\t\t-> OK\t-> PUBLISH_STATUS")
 
-    return states.RECEIVE_COMMANDS
+    return states.PUBLISH_STATUS
 
 def publish_status(s: status):
 
@@ -427,6 +432,7 @@ def receive_commands(s: status):
 
                 if isinstance(reset_channel, str) and reset_channel.lower() == "all":
                     s.reset_plots()
+                    s.start_timestamp = None
                     json_event_message = {
                         "type": "event",
                         "event": "Reset of all channels"
@@ -435,6 +441,7 @@ def receive_commands(s: status):
 
                 elif isinstance(reset_channel, int):
                     s.reset_plots(reset_channel)
+                    s.start_timestamp = None
                     json_event_message = {
                         "type": "event",
                         "event": "Reset of channel" + str(reset_channel)
@@ -446,6 +453,17 @@ def receive_commands(s: status):
             arguments = json_message["arguments"]
             # TO DO
             pass
+
+        elif command == "retrieve":
+
+            if s.verbosity:
+                logging.info(f"Received command {command}")
+
+            success = generic_publish_data(s, True)
+
+            if not success:
+                logging.error("Failed to publish data")
+                return states.PUBLISH_STATUS
 
         elif command == "quit":
             return states.CLOSE_SOCKETS

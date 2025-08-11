@@ -67,8 +67,8 @@ class status:
                         stream.reset()
         else:
             # No channels passed → clear all lists but keep keys
-            for key in self.plots_t:
-                for stream in self.plots_t[key]:
+            for channel in self.plots_t:
+                for stream in self.plots_t[channel]:
                     stream.reset()
 
 # Equivalent to C++ struct state

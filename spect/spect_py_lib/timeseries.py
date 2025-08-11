@@ -17,6 +17,7 @@ import time
 class TimeSeries:
     def __init__(self):
         self.start_timestamp: int = int(time.time())
+        self.last_sent_index: int = 0
         self.times: List[int] = []
         self.values: List[float] = []
 
@@ -27,8 +28,34 @@ class TimeSeries:
     def define_start_timestamp(self, start_timestamp: int):
         self.start_timestamp = start_timestamp
 
+    def latest_data_to_dict(self) -> dict:
+        """
+        Returns only the new data points since the last call,
+        and updates last_sent_index.
+        """
+        if self.last_sent_index < len(self.times):
+            # Slice only the new points
+            new_times = self.times[self.last_sent_index:]
+            new_values = self.values[self.last_sent_index:]
+
+            # Update last sent index
+            self.last_sent_index = len(self.times)
+
+            return {
+                "start_timestamp": self.start_timestamp,
+                "data": list(zip(new_times, new_values))
+            }
+
+        # No new data
+        return {
+            "start_timestamp": self.start_timestamp,
+            "data": []
+        }
+
+
     def reset(self):
         self.start_timestamp = time.time()
+        self.last_sent_index: int = 0
         self.times.clear()
         self.values.clear()
 

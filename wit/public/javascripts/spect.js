@@ -65,6 +65,9 @@ function page_loaded() {
 
     var start_unix = null;
 
+    var first_data = true;
+    var reset_plot = false;
+
     const module_name = String($('input#module_name').val());
 
     $("#time_refresh").val(default_time_refresh);
@@ -89,25 +92,18 @@ function page_loaded() {
         const new_status = JSON.parse(utf8decoder.decode(message));
         connection_checker.beat();
 
-        if (new_status["timestamp"] !== old_status["timestamp"])
-        {
+        if (new_status["timestamp"] !== old_status["timestamp"]) {
             old_status = new_status;
 
-            try {
-                const active_channels = Object.keys(new_status["active_channels"]).map(Number);
-                update_selector(active_channels);
-            } catch (error) { }
-
-            if (new_status.hasOwnProperty("config")) {
+            // Always parse config if it exists
+            if (new_status.hasOwnProperty("config") && last_spect_config !== new_status["config"]) {
                 last_spect_config = new_status["config"];
-            }
 
-            if (new_status.hasOwnProperty("active_channels")) {
-                for (const [channelStr, streams] of Object.entries(new_status.active_channels)) {
-                    const channel = Number(channelStr); // convert "0" -> 0
+                if (Array.isArray(new_status.config.channels)) {
+                    new_status.config.channels.forEach(configChannel => {
+                        if (!configChannel || typeof configChannel.id !== "number") return;
 
-                    const configChannel = new_status.config.channels.find(c => c && c.id === channel);
-                    if (configChannel) {
+                        const channel = configChannel.id;
                         channel_plottypes[channel] = configChannel.plotType;
                         channel_titles[channel] = configChannel.label || configChannel.title || "";
 
@@ -118,9 +114,20 @@ function page_loaded() {
                                 Plotly.relayout('plot_timeseries', { 'title.text': channel_titles[channel] });
                             }
                         }
-                    }
+                    });
+                }
+            }
 
-                    active_channels[channel] = streams;
+            // Only update active_channels if provided (can still be empty)
+            if (new_status.hasOwnProperty("active_channels")) {
+
+                try {
+                    const active_ch_ids = Object.keys(new_status["active_channels"]).map(Number);
+                    update_selector(active_ch_ids);
+                } catch (error) { }
+
+                for (const [channelStr, streams] of Object.entries(new_status.active_channels)) {
+                    active_channels[Number(channelStr)] = streams;
                 }
             }
         }
@@ -134,7 +141,7 @@ function page_loaded() {
                 active_channels[Number(channelStr)] = streams;
             }
 
-            message.data.forEach(channelObj => {
+            for (const channelObj of message.data) {
 
                 const ch = channelObj.id;
                 var id = ch;
@@ -151,7 +158,13 @@ function page_loaded() {
 
                 let plotObj;
                 plotObj = channelObj.plot;
-                if (start_unix === null) start_unix = plotObj.start_timestamp;
+                if (start_unix === null) {
+                    if (!reset_plot) start_unix = plotObj.start_timestamp;
+                    else {
+                        reset_plot = false;
+                        break;
+                    }
+                }
                 // Remove previous null if it exists at the end
                 if (
                     channel_data[id].x.length > 0 &&
@@ -161,19 +174,15 @@ function page_loaded() {
                     channel_data[id].y.pop();
                 }
 
-                const lastX = channel_data[id].x[channel_data[id].x.length - 1] ?? -Infinity;
-
                 plotObj.data.forEach(point => {
-                    if (point[0] > lastX) {
                         channel_data[id].x.push(point[0]);
                         channel_data[id].y.push(point[1]);
-                    }
                 });
 
                 // Always append null at the end
                 channel_data[id].x.push(null);
                 channel_data[id].y.push(null);
-            });
+            }
         }        
     }
 
@@ -271,9 +280,17 @@ function page_loaded() {
     function on_data(message) {
         const decoded_string = utf8decoder.decode(message);
         const new_timeseries = JSON.parse(decoded_string);
+        if(first_data) {
+            try {
+                const active_channels = Object.keys(new_timeseries["active_channels"]).map(Number);
+                update_selector(active_channels);
+            } catch (error) { }
+        }
         add_to_timeseries(new_timeseries);
         // update_selector(active_channels);
-        update_plot();
+        update_plot(first_data);
+        first_data = false;
+
     }
 
     function spect_get_config() {
@@ -293,6 +310,26 @@ function page_loaded() {
     
             return kwargs;
         }
+    }
+
+    function spect_reset_plot(channel) {
+        if (channel === "all") {
+            channel_data = {}; // wipe all
+        } else {
+            if (channel_data[channel]) {
+                channel_data[channel] = { x: [], y: [] };
+            }
+        }
+        update_plot(true);
+        reset_plot = true;
+        first_data = true;
+        start_unix = null;
+    }
+
+    function spect_plot_all_data() {
+        channel_data = {};
+        first_data = true;
+        update_plot(true);
     }
     
     socket_io.on("connect", socket_io_connection(socket_io, module_name, on_status, update_events_log(), on_data));
@@ -316,8 +353,21 @@ function page_loaded() {
     // $("#button_config_send").on("click", send_command(socket_io, 'reconfigure', spec_arguments_reconfigure));
     $("#button_config_get").on("click", spect_get_config);
     // $("#button_config_download").on("click", spec_download_config);
-    $("#button_reset_channel").on("click", send_command(socket_io, 'reset', spect_arguments_reset()));
-    $("#button_reset_all").on("click", send_command(socket_io, 'reset', spect_arguments_reset("all")));
+    $("#button_retrieve_data").on("click", function () {
+        const ch = selected_channel();
+        spect_plot_all_data(ch);
+        send_command(socket_io, 'retrieve', null)();
+    });
+    $("#button_reset_channel").on("click", function () {
+        const ch = selected_channel();
+        spect_reset_plot(ch);
+        send_command(socket_io, 'reset', spect_arguments_reset())();
+    });
+
+    $("#button_reset_all").on("click", function () {
+        spect_reset_plot("all");
+        send_command(socket_io, 'reset', spect_arguments_reset("all"))();
+    });
 
     // Resize handling to keep plot responsive
     var observer = new MutationObserver(function () {
