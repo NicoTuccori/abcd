@@ -14,8 +14,17 @@ block content
           button.abcd_stop(id="button_stop") Stop
         p
           button.abtp2_get_temperature(id="button_temperature") Monitor Temperature
-        p
+        div.checkbox-group
           button.abtp2_calibrate(id="button_calibration") Perform calibration
+          label
+            input(type="checkbox" id="disc" value="disc_calibration")
+            | Discriminators
+          label
+            input(type="checkbox" id="tdc" value="tdc_calibration")
+            | TDC
+          label
+            input(type="checkbox" id="qdc" value="qdc_calibration")
+            | QDC
       div.display 
         h3 Status
         div#module_status

@@ -193,6 +193,13 @@ button.abtp2_calibrate:before {
     margin-right: 1ex;
 }
 
+.checkbox-group label {
+  display: inline-block;
+  margin-left: 20px;
+  font-family: "Fira Sans", sans-serif;
+  font-size: 10pt;
+}
+
 button.abcd_stop:before {
     content: "\e53a";
     font-family: "Material Icons";

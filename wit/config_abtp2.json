@@ -1,5 +1,5 @@
 {
-    "verbosity": 1,
+    "verbosity": 2,
     "heartbeat": 1000,
     "modules": [
     {

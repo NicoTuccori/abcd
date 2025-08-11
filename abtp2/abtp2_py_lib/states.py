@@ -29,6 +29,7 @@ PUBLISH_STATUS =                state(202, "Publish status",                acti
 PUBLISH_TEMPERATURE =           state(203, "Read and publish temperature",  actions.publish_temperature)
 START_ACQUISITION =             state(204, "Start acquisition",             actions.start_acquisition)
 STOP_ACQUISITION =              state(205, "Stop acquisition",              actions.stop_acquisition)
+CALIBRATE_DIGITIZER =           state(206, "Calibrate digitizer",        actions.calibrate_digitizer)
 
 ACQUISITION_RECEIVE_COMMANDS =  state(301, "Acquisition receive commands",  actions.acquisition_receive_commands)
 POLL_DIGITIZER =                state(302, "Poll digitizer thread",         actions.poll_digitizer)

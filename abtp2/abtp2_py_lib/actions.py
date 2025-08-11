@@ -22,6 +22,7 @@ from . import states
 import os
 
 from .petsys_lib import daqd, config, fe_power, fe_temperature
+from .petsys_lib import acquire_threshold_calibration, process_threshold_calibration
 
 # Define or import your delay constant (ms)
 defaults_abcd_zmq_delay = 100  # replace with actual constant if needed
@@ -500,7 +501,7 @@ def generic_publish_temperature(s: status) -> bool:
             portID, slaveID, moduleID, sensorID, sensorPlace = sensor.get_location()
             sensor_16bit = encode_temp_sensor(portID, slaveID, moduleID, sensorID, sensorPlace)
             temp = int(sensor.get_temperature()*100)
-            logging.info(f"Found temperature sensor at {sensor.get_location()}\tID: {sensor_16bit}, temp: {round(sensor.get_temperature(),2)} ºC")
+            logging.info(f"Found temperature sensor at ({portID, slaveID, moduleID, sensorID, sensorPlace})\tID: {sensor_16bit}, temp: {round(temp/100,2)} ºC")
             s.add_event(timestamp=timestamp, 
                         qshort=temp, 
                         qlong=0, 
@@ -694,6 +695,25 @@ def receive_commands(s: status):
         elif command == "get_temperature":
             s.publish_temp = True
 
+        elif command == "calibrate" and "arguments" in json_message:
+            arguments = json_message["arguments"]
+
+            if "options" in arguments:
+
+                s.calibrationOptions = arguments["options"]
+
+                # Build and publish event
+                event_message = {
+                    "type": "event",
+                    "event": "Digitizer calibration",
+                }
+                generic_publish_message(s, defaults_abcd_events_topic, event_message)
+
+                return states.CALIBRATE_DIGITIZER
+            else:
+                logging.error("Calibrate command received, but no options provided")
+                return states.RECEIVE_COMMANDS
+
         # --- stop ---
         elif command == "off":
             # return states.CLEAR_MEMORY
@@ -737,6 +757,14 @@ def start_acquisition(s: status):
     except Exception as e:
         logging.error(f"Failed to check if DAQ daemon is running: {e}")
         return states.DIGITIZER_ERROR
+    
+    if not os.path.exists(s.working_folder + "disc_calibration.tsv"):
+        logging("Discriminator Calibration file not detected in working folder. Please perform ASIC calibration.")
+        return states.RECEIVE_COMMANDS
+    
+    if not os.path.exists(s.working_folder + "bias_calibration.tsv"):
+        logging("Discriminator Threshold Settings file not detected in working folder. Please perform ASIC calibration.")
+        return states.RECEIVE_COMMANDS
     
     try:
         generic_set_sipm_bias(s, "on")
@@ -958,7 +986,61 @@ def acquisition_publish_temperature(s: status):
     
     return states.ACQUISITION_RECEIVE_COMMANDS
 
+def calibrate_digitizer(s: status):
+
+    HowIsDAQD = False
+    try:
+        HowIsDAQD = s.daemon.is_daqd_running()
+        if HowIsDAQD:
+            if s.verbosity > 0:
+                logging.info("DAQ daemon running.")
+        else:
+            logging.error(f"Failed to find the DAQ daemon: HowIsDAQD = {HowIsDAQD}")
+            return states.DIGITIZER_ERROR
+    except Exception as e:
+        logging.error(f"Failed to check if DAQ daemon is running: {e}")
+        return states.DIGITIZER_ERROR
+
+    if not os.path.exists(os.path.join(s.working_folder, "bias_settings.tsv")):
+        logging.error(f"Please save bias voltage settings in {s.working_folder} as bias_settings.tsv.")
+        return False
     
+    ask_cal = [True, True, True]
+    ask_cal[0] = s.calibrationOptions[0]
+    ask_cal[1] = s.calibrationOptions[1]
+    ask_cal[2] = s.calibrationOptions[2]
+
+    do_cal = ask_cal
+    
+    for i,f in enumerate(["disc_calibration", "tdc_calibration", "qdc_calibration"]):
+        if os.path.exists(s.working_folder+f+".tsv") and s.calibrationOptions[i] == f:
+            logging.info(f"A calibration file '{f}' already exists in the working folder. It will be overwritten.")
+            do_cal[i] = True
+
+    if not any(do_cal):
+        return states.RECEIVE_COMMANDS
+    
+    if do_cal[0]:
+        if s.verbosity:
+            logging.info("Acquiring threshold calibration...")
+        acquire_threshold_calibration.acquire_threshold_calibration(s)
+
+        if s.verbosity:
+            logging.info("Processing threshold calibration...")
+        process_threshold_calibration.process_threshold_calibration(s)
+        # command += "python3 -u ./make_simple_disc_settings_table --config " + s.working_folder + "config.ini --vth_t1 20 --vth_t2 20 --vth_e 15 -o " + s.working_folder+"disc_settings.tsv;"
+        
+    # if do_cal[1]:
+    #     command += "python3 -u ./acquire_tdc_calibration --config " + s.working_folder+"config.ini -o " + s.working_folder + "tdc_calibration;"
+    #     command += "./process_tdc_calibration --config " + s.working_folder + "config.ini -i " + s.working_folder + "tdc_calibration -o " + s.working_folder+"tdc_calibration;"
+
+    # if do_cal[2]:
+    #     command += "python3 -u ./acquire_qdc_calibration --config " + s.working_folder+"config.ini -o " + s.working_folder+"qdc_calibration;"
+    #     command += "./process_qdc_calibration --config " + s.working_folder+"config.ini -i " + s.working_folder + "qdc_calibration -o "+ s.working_folder+"qdc_calibration;"
+    
+
+    return states.RECEIVE_COMMANDS
+
 #******************************************************************************/
 #* Sockets-specific actions                                                   */
 #******************************************************************************/
