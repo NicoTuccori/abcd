@@ -1023,11 +1023,11 @@ def calibrate_digitizer(s: status):
     if do_cal[0]:
         if s.verbosity:
             logging.info("Acquiring threshold calibration...")
-        acquire_threshold_calibration.acquire_threshold_calibration(s)
+        # acquire_threshold_calibration.acquire_threshold_calibration(s)
 
         if s.verbosity:
             logging.info("Processing threshold calibration...")
-        process_threshold_calibration.process_threshold_calibration(s)
+        # process_threshold_calibration.process_threshold_calibration(s)
         # command += "python3 -u ./make_simple_disc_settings_table --config " + s.working_folder + "config.ini --vth_t1 20 --vth_t2 20 --vth_e 15 -o " + s.working_folder+"disc_settings.tsv;"
         
     # if do_cal[1]:
