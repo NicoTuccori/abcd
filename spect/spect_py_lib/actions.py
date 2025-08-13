@@ -178,21 +178,35 @@ def generic_read_socket(s: status) -> bool:
             logging.info(f"Message size: {size}")
             logging.info(f"Topic: {topic}")
 
-        if not topic or not topic.startswith(defaults_abcd_data_events_topic):
+        if not topic or not topic.startswith(s.data_topic):
             if s.verbosity > 0:
                 logging.info(f"Ignoring message with unknown topic: {topic}")
             break  # Exit after first invalid topic
 
         event_start = time.time()
-        events = list(parse_events(input_buffer))
+
+        events = []
+        if s.data_type == "events":
+            events = list(parse_events(input_buffer))
+
+        elif s.data_type == "status":
+            events.append(json.loads(input_buffer.decode('utf-8')))
+        else:
+            logging.error(f"Unknown data type: {s.data_type}")
+            return False
+
+        event_end = time.time()
+        event_time = event_end - event_start
         processed_events = 0
 
         for i, event in enumerate(events):
             
-            channel = event['channel']
-
-            if channel not in s.enabled_channels:
-                continue
+            if s.data_type == "events":
+                channel = event['channel']
+                if channel not in s.enabled_channels:
+                    continue
+            elif s.data_type == "status":
+                channel = 0
             
             if channel not in s.active_channels:
                 s.active_channels[channel] = []
@@ -201,7 +215,11 @@ def generic_read_socket(s: status) -> bool:
                 s.stream_labels_per_channel[channel] = []
                 s.plots_t[channel] = []
 
-            ts = event['timestamp']
+            if s.data_type == "events":
+                ts = event['timestamp']
+            elif s.data_type == "status":
+                ts = int(event['timestamp'])
+            
             if s.start_timestamp is None:
                 s.start_timestamp = ts
             t = ts - s.start_timestamp
@@ -215,6 +233,12 @@ def generic_read_socket(s: status) -> bool:
                 stream = event['baseline']
                 stream_label = decode_temp_sensor(stream)
                 y = round(event['qshort'] / 100.0, 2)
+
+            if s.plot_type[channel] == PlotType.ABTP2_RATE:
+
+                stream = 0
+                stream_label = "Acquisition rate"
+                y = event['acquisition']['rates']
 
             if stream not in s.active_channels[channel]:
                 s.active_channels[channel].append(stream)
@@ -347,6 +371,25 @@ def apply_config(s: status):
     if s.verbosity > 0:
         logging.info(f"Applying config: {s.spect_config}")
 
+    if s.spect_config["dataType"]:
+        s.data_type = s.spect_config["dataType"]
+        if s.verbosity:
+            logging.info(f"Data type: {s.data_type}")
+
+    if s.spect_config["dataTopic"]:
+        s.data_topic = s.spect_config["dataTopic"]
+    else:
+        s.data_topic = defaults_abcd_data_events_topic
+    if s.verbosity:
+        logging.info(f"Data topic: {s.data_topic}")
+    
+    try:
+        s.abcd_data_socket.setsockopt(zmq.SUBSCRIBE, s.data_topic.encode("utf-8"))  # or b"" to receive all topics
+    except zmq.ZMQError as e:
+        logging.error(f"ZeroMQ Error on abcd data socket subscribe: {e}")
+        logging.info(f"Subscribing to all topics")
+        s.abcd_data_socket.setsockopt(zmq.SUBSCRIBE, b"")
+
     try:
         for channel in s.spect_config["channels"]:
 
@@ -363,6 +406,13 @@ def apply_config(s: status):
             plottype = None
             if channel["plotType"] == "abtp2_temperature":
                 plottype = PlotType.ABTP2_TEMPERATURE
+                if not s.data_type == "events":
+                    raise Exception(f"Invalid dataType: {s.data_type} for plot type: {channel['plotType']}")
+
+            elif channel["plotType"] == "abtp2_rate":
+                plottype = PlotType.ABTP2_RATE
+                if not s.data_type == "status":
+                    raise Exception(f"Invalid dataType: {s.data_type} for plot type: {channel['plotType']}")
             
             s.plot_type[channel["id"]] = plottype
 
@@ -584,12 +634,6 @@ def bind_sockets(s: status):
         s.abcd_data_socket.connect(s.abcd_data_address)
     except zmq.ZMQError as e:
         logging.error(f"ZeroMQ Error on abcd data socket binding: {e}")
-        return states.COMMUNICATION_ERROR
-    
-    try:
-        s.abcd_data_socket.setsockopt(zmq.SUBSCRIBE, defaults_abcd_data_events_topic.encode("utf-8"))  # or b"" to receive all topics
-    except zmq.ZMQError as e:
-        logging.error(f"ZeroMQ Error on abcd data socket subscribe: {e}")
         return states.COMMUNICATION_ERROR
 
     time.sleep(defaults_abcd_zmq_delay / 1000.0)  # sleep in seconds

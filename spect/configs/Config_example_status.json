@@ -1,10 +1,12 @@
 {
+    "dataType": "status",
+    "dataTopic": "status_abcd",
     "channels": [
         {
             "id": 0,
             "enabled": true,
-            "label": "temperature_sensors",
-            "plotType": "abtp2_temperature",
+            "label": "acquisition_rate",
+            "plotType": "abtp2_rate",
             "saveData": true,
             "fileNamePrefix": "output/data"
         },

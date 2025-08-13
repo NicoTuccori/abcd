@@ -3,6 +3,7 @@ import time
 import struct
 import random
 import logging
+import json
 
 # Struct and packing function
 EVENT_STRUCT = struct.Struct('<QHHHBB')
@@ -15,9 +16,9 @@ def send_byte_message(socket: zmq.Socket,
                       buffer_bytes: bytes,
                       verbosity: int = 0) -> bool:
     if topic:
-        topic_with_space = topic + b" "
+        topic_with_space = topic + " "
     else:
-        topic_with_space = b""
+        topic_with_space = ""
 
     try:
         payload = bytes(buffer_bytes)
@@ -25,7 +26,8 @@ def send_byte_message(socket: zmq.Socket,
         logging.error(f"Error converting payload to bytes: {e}")
         return False
 
-    frame = topic_with_space + payload
+    topic_bytes = topic_with_space.encode("utf-8")
+    frame = topic_bytes + payload
     envelope_size = len(frame)
 
     if verbosity > 0:
@@ -69,7 +71,7 @@ def send_dummy_temperature_data(pub_address='tcp://127.0.0.1:16181', topic="data
             event_bytes = pack_event(timestamp, qshort, qlong, baseline, channel, group_counter)
             event_buffer.extend(event_bytes)
 
-        success = send_byte_message(socket, topic.encode('utf-8'), event_buffer, verbosity=verbosity)
+        success = send_byte_message(socket, topic, event_buffer, verbosity=verbosity)
 
         if success and verbosity > 0:
             print(f"Sent dummy temp event {i}: Qshort={qshort}, Qlong={qlong}")
@@ -79,6 +81,42 @@ def send_dummy_temperature_data(pub_address='tcp://127.0.0.1:16181', topic="data
     socket.close()
     context.term()
 
+def send_dummy_rates(pub_address='tcp://*:16180', topic="status_abcd", n_events=1000, delay=5.0, verbosity=1):
+    context = zmq.Context()
+    socket = context.socket(zmq.PUB)
+    socket.bind(pub_address)
+    time.sleep(0.2)  # Let bind settle
+
+    for i in range(n_events):
+
+        status_message = {
+            "config": "",
+            "acquisition": {
+                "running": True
+            },
+            "digitizer": {}  
+        }
+
+        status_message["acquisition"]["rates"] = random.randint(5, 700)
+        status_message["module"] = "abtp2"
+        status_message["timestamp"] = time.time()
+        status_message["msg_ID"] = i
+        message = json.dumps(status_message, separators=(",", ":"))
+
+        total_size = len(message)
+        topic_pub = f"{topic}_v0_s{total_size}"
+
+        success = send_byte_message(socket, topic_pub, message.encode("utf-8"), verbosity=verbosity)
+
+        if success and verbosity > 0:
+            print(f"Sent dummy rate status {i}: {message}")
+
+        time.sleep(delay)
+
+    socket.close()
+    context.term()
+
 # Run it directly for testing
 if __name__ == "__main__":
-    send_dummy_temperature_data()
+    send_dummy_rates()
+    # send_dummy_temperature_data()

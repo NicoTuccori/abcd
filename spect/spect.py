@@ -19,7 +19,7 @@ from spect_py_lib.typedefs import status
 
 # Default SPECT
 DEFAULT_SPECT_STATUS_ADDR    = 'tcp://*:16187'
-DEFAULT_SPECT_DATA_ADDR      = "tcp://127.0.0.1:16188"
+DEFAULT_SPECT_DATA_ADDR      = "tcp://*:16188"
 DEFAULT_SPECT_COMMAND_ADDR   =  "tcp://*:16189"
 DEFAULT_CONFIG_FILE    = '/Users/nt292/Library/CloudStorage/OneDrive-UniversityofSussex/Documents/ABCD/abcd/spect/configs/Config_example.json'
 DEFAULT_BASE_PERIOD_MS = 100.0

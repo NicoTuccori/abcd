@@ -107,13 +107,13 @@ function page_loaded() {
                         channel_plottypes[channel] = configChannel.plotType;
                         channel_titles[channel] = configChannel.label || configChannel.title || "";
 
-                        if (channel_plottypes[channel] === "abtp2_temperature") {
-                            const plotDiv = document.getElementById('plot_timeseries');
-                            if (plotDiv?.layout?.title) {
-                                plotDiv.layout.title.text = channel_titles[channel];
-                                Plotly.relayout('plot_timeseries', { 'title.text': channel_titles[channel] });
-                            }
+                        // if (channel_plottypes[channel] === "abtp2_temperature") {
+                        const plotDiv = document.getElementById('plot_timeseries');
+                        if (plotDiv?.layout?.title) {
+                            plotDiv.layout.title.text = channel_titles[channel];
+                            Plotly.relayout('plot_timeseries', { 'title.text': channel_titles[channel] });
                         }
+                        // }
                     });
                 }
             }
@@ -147,13 +147,19 @@ function page_loaded() {
                 var id = ch;
 
                 if (channel_plottypes[ch] == "abtp2_temperature") id = channelObj.stream;
+                else if (channel_plottypes[ch] == "abtp2_rates") id = channelObj.stream;
 
                 if (!channel_data[id]) channel_data[id] = { x: [], y: [] };
 
                 let labelObj;
                 if (!channel_labels[id]) {
-                    labelObj = typeof channelObj.label === "string" ? JSON.parse(channelObj.label) : channelObj.label;
-                    channel_labels[id] = `( ${labelObj.portID}, ${labelObj.slaveID}, ${labelObj.moduleID}, ${labelObj.sensorID}, ${labelObj.sensorPlace} )`;
+                    if (channel_plottypes[ch] == "abtp2_temperature") {
+                        labelObj = JSON.parse(channelObj.label);
+                        channel_labels[id] = `( ${labelObj.portID}, ${labelObj.slaveID}, ${labelObj.moduleID}, ${labelObj.sensorID}, ${labelObj.sensorPlace} )`;
+                    }
+                    else {
+                        channel_labels[id] = labelObj;
+                    }
                 }
 
                 let plotObj;

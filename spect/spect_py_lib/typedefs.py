@@ -15,6 +15,7 @@ from .timeseries import TimeSeries
 
 class PlotType:
     ABTP2_TEMPERATURE = 0
+    ABTP2_RATE = 1
 
 @dataclass
 class status:
@@ -42,7 +43,10 @@ class status:
     system_start: float = field(default_factory=lambda: time.time())
     last_publication: float = field(default_factory=lambda: time.time())
 
+    data_topic: str = ""
+
     plot_type: Dict[int, int] = field(default_factory=dict)
+    data_type: str = "events"
 
     start_timestamp: Optional[int] = None
     enabled_channels: List[int] = field(default_factory=list)

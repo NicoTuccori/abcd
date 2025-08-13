@@ -1,0 +1,17 @@
+{
+    "dataType": "events",
+    "dataTopic": "data_abcd_events",
+    "channels": [
+        {
+            "id": 0,
+            "enabled": true,
+            "label": "temperature_sensors",
+            "dataType": "events",
+            "plotType": "abtp2_temperature",
+            "saveData": true,
+            "fileNamePrefix": "output/data"
+        },
+        {}
+    ],
+    "zzz": null
+}
